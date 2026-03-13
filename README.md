@@ -2,7 +2,7 @@
 
 A [FiftyOne](https://github.com/voxel51/fiftyone) plugin that renders an interactive SVG line chart of per-frame detection counts in the modal view, with **bidirectional video sync**.
 
-- **Video → Chart**: a red vertical line tracks the current video frame in real time during playback
+- **Video → Chart**: a blue vertical line tracks the current video frame in real time during playback
 - **Chart → Video**: click or drag anywhere on the chart to seek the video to that frame
 
 ![gif](video-detection-chart-plugin.gif)
@@ -26,7 +26,7 @@ Returns per-frame detection counts for a sample. Called internally by the JS pan
 Opens in the modal view alongside the video player. Shows a line chart with:
 
 - **Line + area fill** of detection counts per frame
-- **Red frame indicator** (vertical line + dot + count label) tracking the current frame
+- **Blue frame indicator** (vertical line + dot + count label) tracking the current frame
 - **Click/drag to seek** — click anywhere on the chart or drag to scrub through frames
 - **Status bar** showing frame number, FPS, and play/pause state
 
@@ -35,7 +35,7 @@ Opens in the modal view alongside the video player. Shows a line chart with:
 1. Open the FiftyOne App and load a **video dataset** with frame-level detections
 2. Open a sample in the modal view
 3. Open the panel via the **+** button and select **"Detection Count Plot (Interactive)"**
-4. Play the video — the red vertical line tracks the current frame
+4. Play the video — the blue vertical line tracks the current frame
 5. Click or drag on the chart to seek the video to any frame
 
 ## How It Works
