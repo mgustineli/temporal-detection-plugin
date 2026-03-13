@@ -1,0 +1,15 @@
+docs/
+*venv/
+*.egg-info/
+*.DS_Store
+*.pyc
+build/
+__pycache__/
+.ipynb_checkpoints/
+
+# Environment variables and credentials
+.env
+gcp-credentials.json
+azure-storage.ini
+projects/grouped-datasets-delegated-ops/*.egg-info/
+uv.lock
