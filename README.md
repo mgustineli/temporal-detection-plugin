@@ -5,6 +5,8 @@ A [FiftyOne](https://github.com/voxel51/fiftyone) plugin that renders an interac
 - **Video → Chart**: a red vertical line tracks the current video frame in real time during playback
 - **Chart → Video**: click or drag anywhere on the chart to seek the video to that frame
 
+![gif](video-detection-chart-plugin.gif)
+
 ## Installation
 
 ```shell
