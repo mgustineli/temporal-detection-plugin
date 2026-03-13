@@ -1,0 +1,10 @@
+name: detection-count-chart
+type: plugin
+version: 1.0.0
+description: Interactive detection count chart with bidirectional video sync
+fiftyone:
+  version: ">=0.21.0"
+panels:
+  - DetectionCountPlotInteractive
+operators:
+  - get_detection_counts

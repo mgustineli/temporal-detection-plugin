@@ -1,0 +1,7 @@
+{
+  "name": "detection-count-chart",
+  "version": "1.0.0",
+  "fiftyone": {
+    "script": "index.umd.js"
+  }
+}
