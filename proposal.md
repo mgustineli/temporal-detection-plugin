@@ -6,8 +6,9 @@ This plugin renders an interactive SVG line chart of per-frame detection counts 
 
 ## Current Architecture
 
-- **JS panel** (`index.umd.js`): Hand-written UMD — renders SVG chart, subscribes to video state via `modalLooker.subscribeToState()`, seeks video via `modalLooker.getVideo()` + `modalLooker.updater()`
-- **Python operator** (`__init__.py`): `GetDetectionCounts` — fetches `frames.detections.detections` counts for a single sample using `dataset.select(sample_id).values()`
+- **JS panel** (`index.umd.js`): Hand-written UMD — renders SVG chart with field selector dropdown, subscribes to video state via `modalLooker.subscribeToState()`, seeks video via `modalLooker.getVideo()` + `modalLooker.updater()`
+- **Python panel** (`__init__.py` — `FrameDataPlot`): Plotly line chart with `FrameLoaderView` timeline sync, field selector via `AutocompleteView`, moving dot indicator. Video → chart sync only (no click-to-seek).
+- **Python operators** (`__init__.py`): `GetTemporalFields` discovers plottable fields, `GetFrameValues` fetches per-frame data for any field, `GetDetectionCounts` legacy wrapper
 
 ## Feature 1: Field Selector
 
@@ -111,9 +112,10 @@ The JS panel already handles ImaVid via `useVideoState()` which reads `fos.shoul
 
 ## Implementation Order
 
-1. **Field selector** (Python operator + JS dropdown) — highest user impact
-2. **Dynamic group support** (Python operator branching) — required for NuScenes-style datasets
-3. **Multiple plots** (JS rendering of overlaid/stacked charts) — nice-to-have, builds on field selector
+1. ~~**Field selector** (Python operator + JS dropdown) — highest user impact~~ **DONE**
+2. ~~**Python-only panel** (`FrameDataPlot` with Plotly + `FrameLoaderView`)~~ **DONE**
+3. **Dynamic group support** (Python operator branching) — required for NuScenes-style datasets
+4. **Multiple plots** (JS rendering of overlaid/stacked charts) — nice-to-have, builds on field selector
 
 ## Reference Plugins
 
@@ -123,12 +125,17 @@ The JS panel already handles ImaVid via `useVideoState()` which reads `fos.shoul
 
 ## Trade-offs: JS Panel vs Python Panel
 
-| | JS Panel (current) | Python Panel (`FrameLoaderView`) |
+Both panels are now implemented. Key differences confirmed during development:
+
+| | JS Panel (Interactive) | Python Panel (Frame Data Plot) |
 |---|---|---|
 | Timeline sync | `subscribeToState` — real-time, no latency | `FrameLoaderView` — buffered, slight latency |
 | Chart rendering | Custom SVG — full control, lightweight | Plotly via `panel.plot()` — feature-rich, heavier |
-| Click-to-seek | Direct `modalLooker.getVideo().currentTime` | Not natively supported |
+| Click-to-seek | Direct `modalLooker.getVideo().currentTime` | Not possible — no Python API to seek video player |
+| Frame indicator | Vertical line + dot + frame/count labels | Moving dot only (`selectedpoints`) — vertical line and labels not possible (Plotly shapes/annotations aren't targetable by `FrameLoaderView`) |
+| Field selector | Native `<select>` styled to VOODO | `AutocompleteView` (built-in FiftyOne component) |
 | Build step | None (hand-written UMD) | None (Python only) |
 | Complexity | Higher (manual SVG + event handling) | Lower (declarative Plotly) |
+| Best for | Full-featured interactive experience | Python-only teams needing basic visualization |
 
-**Decision**: Keep the JS panel approach for bidirectional sync (the plugin's core value proposition). Use Python operator improvements for field discovery and data fetching.
+**Decision**: Ship both panels in the same plugin. JS panel is the primary experience; Python panel is the lightweight alternative for teams that don't write JS.
