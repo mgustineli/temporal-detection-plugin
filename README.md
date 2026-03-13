@@ -1,4 +1,4 @@
-# Detection Count Chart Plugin for FiftyOne
+# Video Detection Chart Plugin for FiftyOne
 
 A [FiftyOne](https://github.com/voxel51/fiftyone) plugin that renders an interactive SVG line chart of per-frame detection counts in the modal view, with **bidirectional video sync**.
 
@@ -8,7 +8,7 @@ A [FiftyOne](https://github.com/voxel51/fiftyone) plugin that renders an interac
 ## Installation
 
 ```shell
-fiftyone plugins download https://github.com/mgustineli/detection-count-chart-plugin
+fiftyone plugins download https://github.com/mgustineli/video-detection-chart-plugin
 ```
 
 ## Operators

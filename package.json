@@ -1,5 +1,5 @@
 {
-  "name": "detection-count-chart",
+  "name": "video-detection-chart",
   "version": "1.0.0",
   "fiftyone": {
     "script": "index.umd.js"

@@ -141,7 +141,7 @@ The `modalLooker` is the actual Looker instance, shared between the video player
 ## Data Flow
 
 1. **Panel opens** in modal → reads `fos.modalSampleId` from Recoil
-2. **Calls Python operator** via `useOperatorExecutor("timeline-sync-test/get_detection_counts")`
+2. **Calls Python operator** via `useOperatorExecutor("video-detection-chart/get_detection_counts")`
 3. **Python operator** queries the dataset, returns `{frames, counts, fps, total_frames}`
 4. **SVG chart renders** with line + area fill + axis labels
 5. **During playback**: `subscribeToState("frameNumber")` fires on each frame → red vertical line moves

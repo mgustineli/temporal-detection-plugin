@@ -1,5 +1,5 @@
 // ============================================================
-// DetectionCountPlotInteractive — JS Panel for detection-count-chart
+// DetectionCountPlotInteractive — JS Panel for video-detection-chart
 //
 // SVG line chart of per-frame detection counts with bidirectional
 // video sync:
@@ -558,7 +558,7 @@
     var executor = null;
     if (foo && typeof foo.useOperatorExecutor === "function") {
       executor = foo.useOperatorExecutor(
-        "detection-count-chart/get_detection_counts",
+        "video-detection-chart/get_detection_counts",
       );
     } else {
       console.error(

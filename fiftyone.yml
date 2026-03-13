@@ -1,7 +1,7 @@
-name: detection-count-chart
+name: video-detection-chart
 type: plugin
 version: 1.0.0
-description: Interactive detection count chart with bidirectional video sync
+description: Interactive video detection chart with bidirectional video sync
 fiftyone:
   version: ">=0.21.0"
 panels:
