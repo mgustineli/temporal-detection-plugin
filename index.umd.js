@@ -62,13 +62,30 @@
       fos.dynamicGroupCurrentElementIndex,
     );
 
+    // ImaVid frame setter — directly controls the ImaVid player's current frame
+    var setImaVidFrameNumber = useSetRecoilState(
+      fos.imaVidLookerState("currentFrameNumber"),
+    );
+
     var stateRef = useRef({ playing: false, frameNumber: 1 });
     var _s = useState(0);
     var forceUpdate = _s[1];
 
     useEffect(
       function () {
-        // Path 1: Dynamic group — frame = element index + 1 (1-based)
+        // Path 1: Dynamic group in VIDEO mode — uses ImaVid looker
+        if (isDynamicGroup && isImaVid) {
+          stateRef.current = {
+            playing: imaVidPlaying,
+            frameNumber: imaVidFrameNumber,
+          };
+          forceUpdate(function (n) {
+            return n + 1;
+          });
+          return;
+        }
+
+        // Path 2: Dynamic group in PAGINATION/CAROUSEL mode
         if (isDynamicGroup) {
           var dgFrame = (dynamicGroupIndex || 0) + 1;
           stateRef.current = {
@@ -81,7 +98,7 @@
           return;
         }
 
-        // Path 2: ImaVid mode
+        // Path 3: ImaVid mode (non-dynamic-group, if it ever applies)
         if (isImaVid) {
           stateRef.current = {
             playing: imaVidPlaying,
@@ -93,7 +110,7 @@
           return;
         }
 
-        // Path 3: Regular video — subscribe to looker state
+        // Path 4: Regular video — subscribe to looker state
         if (modalLooker && typeof modalLooker.subscribeToState === "function") {
           stateRef.current = {
             playing: modalLooker.state.playing,
@@ -142,6 +159,7 @@
       isImaVid: isImaVid,
       isDynamicGroup: isDynamicGroup,
       setDynamicGroupIndex: setDynamicGroupIndex,
+      setImaVidFrameNumber: setImaVidFrameNumber,
     };
   }
 
@@ -593,6 +611,7 @@
     var isImaVid = videoState.isImaVid;
     var isDynamicGroup = videoState.isDynamicGroup;
     var setDynamicGroupIndex = videoState.setDynamicGroupIndex;
+    var setImaVidFrameNumber = videoState.setImaVidFrameNumber;
 
     // --- Operator executors ---
     var fieldsExecutor = null;
@@ -781,18 +800,21 @@
 
     var handleFrameSeek = useCallback(
       function (frame) {
-        if (isDynamicGroup) {
-          // Dynamic group: set element index (0-based) via Recoil
+        if (isDynamicGroup && isImaVid) {
+          // Dynamic group in VIDEO mode — set the ImaVid frame directly
+          setImaVidFrameNumber(frame);
+        } else if (isDynamicGroup) {
+          // Dynamic group in PAGINATION/CAROUSEL mode
           setDynamicGroupIndex(frame - 1);
         } else if (isImaVid) {
-          // ImaVid: also uses dynamic group index
-          setDynamicGroupIndex(frame - 1);
+          // ImaVid (non-DG context)
+          setImaVidFrameNumber(frame);
         } else {
           // Native video: seek via modalLooker
           seekVideoToFrame(frame, modalLooker, fpsForSeek);
         }
       },
-      [isDynamicGroup, isImaVid, setDynamicGroupIndex, modalLooker, fpsForSeek],
+      [isDynamicGroup, isImaVid, setDynamicGroupIndex, setImaVidFrameNumber, modalLooker, fpsForSeek],
     );
 
     // --- Derive Y-axis label from selected field ---
