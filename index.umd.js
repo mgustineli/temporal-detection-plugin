@@ -192,6 +192,33 @@
   }
 
   // ==========================================================
+  // Utility: seekImaVidToFrame
+  // Mimics FiftyOne's native seek bar behavior exactly:
+  //   mousedown  → updater({seeking: true})
+  //   mousemove  → updater(state => {currentFrameNumber: N})
+  //   mouseup    → updater({seeking: false})
+  // Three separate updater() calls, each triggering the full
+  // render pipeline (makeUpdate → postProcess → canvas draw).
+  // Using a function form for the frame update matches the
+  // seek bar's seekFn$1 pattern.
+  // ==========================================================
+  function seekImaVidToFrame(frameNumber, modalLooker) {
+    if (!modalLooker || typeof modalLooker.updater !== "function") return;
+
+    // Step 1: Enter seeking mode (like seek bar mousedown)
+    modalLooker.updater({ seeking: true });
+
+    // Step 2: Set target frame (like seek bar mousemove / seekFn$1)
+    // Use function form to match the native seek bar pattern
+    modalLooker.updater(function () {
+      return { currentFrameNumber: frameNumber };
+    });
+
+    // Step 3: Exit seeking mode (like seek bar mouseup)
+    modalLooker.updater({ seeking: false });
+  }
+
+  // ==========================================================
   // Component: SVGChart
   // Pure SVG line chart with current-frame indicator and
   // click/drag-to-seek.
@@ -801,20 +828,20 @@
     var handleFrameSeek = useCallback(
       function (frame) {
         if (isDynamicGroup && isImaVid) {
-          // Dynamic group in VIDEO mode — set the ImaVid frame directly
-          setImaVidFrameNumber(frame);
+          // Carousel / Video mode: seek the ImaVid looker directly
+          seekImaVidToFrame(frame, modalLooker);
         } else if (isDynamicGroup) {
-          // Dynamic group in PAGINATION/CAROUSEL mode
+          // Pagination mode: navigate via group element index
           setDynamicGroupIndex(frame - 1);
         } else if (isImaVid) {
-          // ImaVid (non-DG context)
-          setImaVidFrameNumber(frame);
+          // ImaVid (non-dynamic-group)
+          seekImaVidToFrame(frame, modalLooker);
         } else {
-          // Native video: seek via modalLooker
+          // Native video
           seekVideoToFrame(frame, modalLooker, fpsForSeek);
         }
       },
-      [isDynamicGroup, isImaVid, setDynamicGroupIndex, setImaVidFrameNumber, modalLooker, fpsForSeek],
+      [isDynamicGroup, isImaVid, setDynamicGroupIndex, modalLooker, fpsForSeek],
     );
 
     // --- Derive Y-axis label from selected field ---
