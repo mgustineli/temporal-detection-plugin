@@ -19,16 +19,16 @@ Dynamic groups support all three navigation modes: **pagination**, **carousel**,
 │ │ Video Player    │ ─(modalLooker)──▶ │ JS Panel               │ │
 │ │ / ImaVid        │ ─(imaVidState)──▶ │ (index.umd.js)         │ │
 │ │ / Carousel      │ ─(modalSampleId)▶ │                        │ │
-│ │                 │                   │ ── useVideoState()      │ │
-│ │                 │ ◀── getVideo() ── │ ── SVGChart             │ │
-│ │                 │ ◀── drawFrame() ─ │ ── Field selector       │ │
-│ │                 │ ◀── modalSelector │ ── Status bar           │ │
+│ │                 │                   │ ── useVideoState()     │ │
+│ │                 │ ◀── getVideo() ── │ ── SVGChart            │ │
+│ │                 │ ◀── drawFrame() ─ │ ── Field selector      │ │
+│ │                 │ ◀── modalSelector │ ── Status bar          │ │
 │ └─────────────────┘                   └────────────┬───────────┘ │
 │                                                    │             │
 │                                          useOperatorExecutor()   │
 │                                                    │             │
 │ ┌──────────────────────────────────────────────────▼───────────┐ │
-│ │ Python Operators (__init__.py)                                │ │
+│ │ Python Operators (__init__.py)                               │ │
 │ │ ── GetTemporalFields: discovers plottable fields             │ │
 │ │ ── GetFrameValues: per-frame data + sample_ids               │ │
 │ │ ── GetDetectionCounts: legacy wrapper                        │ │
