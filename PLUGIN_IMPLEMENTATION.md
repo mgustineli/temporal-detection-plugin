@@ -50,7 +50,7 @@ plugin/
 
 ### 1. Python Operators (`__init__.py`)
 
-**`GetTemporalFields`** — discovers plottable fields (`FloatField`, `IntField`, `ListField`):
+**`GetTemporalFields`** — discovers plottable fields (`FloatField`, `IntField`, `ListField`). Returns `dataset_name` for per-dataset localStorage persistence:
 
 ```python
 # Branches on ctx.view._is_dynamic_groups
@@ -58,6 +58,9 @@ if _is_dynamic_groups(ctx):
     schema = ctx.view.get_field_schema(flat=True, ftype=ftypes)
 else:
     schema = ctx.view.get_frame_field_schema(flat=True, ftype=ftypes)
+
+# Response includes dataset_name for localStorage key
+return {"fields": fields, "dataset_name": ctx.dataset.name}
 ```
 
 **`GetFrameValues`** — fetches per-frame values for any field:
@@ -92,10 +95,15 @@ Hand-written UMD module (no JSX, no build step). Uses `React.createElement` dire
 DetectionCountPlotPanel (main component)
 ├── useVideoState()          — reads frame number + playing state for all modes
 ├── useOperatorExecutor()    — discovers fields, loads per-frame data
-├── Field selector (<select>) — VOODO-styled native dropdown
+├── Multi-chart state        — charts[], chartStatus{}, dataStoreRef (cache)
+├── Sequential load queue    — loadQueueRef, loadingFieldRef, processQueue()
+├── "Add chart" toolbar      — <select> showing fields not yet added
+├── Scrollable container     — maps charts[] → ChartCard components
+│   └── ChartCard            — header (label + ▲/▼/✕) + SVGChart/loading/error
 ├── SVGChart                 — pure SVG rendering + click/drag-to-seek
+├── localStorage persistence — saves/restores chart selections per dataset
 ├── Carousel sync            — sampleId ↔ frame mapping, modalSelector navigation
-└── Status Bar               — frame counter, FPS, play/pause indicator
+└── Status Bar               — frame counter, FPS, chart count, play/pause
 ```
 
 ## Bidirectional Sync — How It Works
@@ -237,14 +245,68 @@ The `modalLooker` is the actual Looker instance, shared between the video player
 ## Data Flow
 
 1. **Panel opens** in modal → reads `fos.modalSampleId` from Recoil
-2. **Discovers fields** via `useOperatorExecutor("video-detection-chart/get_temporal_fields")`
-3. **Auto-selects** first field (prefers `detections.detections` if available)
-4. **Loads data** via `useOperatorExecutor("video-detection-chart/get_frame_values")`
+2. **Discovers fields** via `useOperatorExecutor("video-detection-chart/get_temporal_fields")` — response includes `dataset_name`
+3. **Initializes charts**: restores from localStorage (keyed by `dataset_name`) → filters to available fields → falls back to default (prefers `detections.detections`)
+4. **Sequential load queue**: fields are queued and loaded one at a time through the single `dataExecutor` — `processQueue()` pops next field, calls `execute()`, stashes result in `dataStoreRef`, advances
 5. **Python operator** returns `{frames, values, fps, total_frames, field, sample_ids}` — branching on `_is_dynamic_groups`
-6. **Builds sample ID mappings** (for carousel mode) from `sample_ids` in the response
-7. **SVG chart renders** with line + area fill + axis labels + field selector
-8. **During playback/navigation**: frame state updates → blue vertical line moves on chart
-9. **On chart click/drag**: `mouseDown` handler calculates frame → dispatches to mode-specific seek function
+6. **Builds sample ID mappings** (for carousel mode) from first chart's `sample_ids` in the response
+7. **ChartCard components render** — each with its own loading/error/data state, SVG chart, and header with move/remove buttons
+8. **localStorage saves** on every chart change (add/remove/reorder) — persisted per dataset
+9. **During playback/navigation**: frame state updates → blue vertical line moves on ALL charts simultaneously
+10. **On chart click/drag**: `mouseDown` handler calculates frame → dispatches to mode-specific seek function → ALL charts update
+11. **On sample change**: data cache clears, chart selections persist, all fields re-queued for loading
+
+## Multi-Chart System
+
+The panel supports viewing multiple temporal fields simultaneously. Users can add, remove, and reorder charts.
+
+### State Model
+
+```js
+var charts = [{id: 1, field: "detections.detections"}, ...];  // ordering + field binding
+var chartStatus = {"detections.detections": {loading: false, error: null}, ...};  // per-field status
+var dataStoreRef = useRef({});  // cache: field → {frames, counts, fps, total_frames}
+```
+
+- `charts` (useState) — drives rendering order and localStorage saves
+- `chartStatus` (useState) — per-field loading/error state, triggers re-renders
+- `dataStoreRef` (useRef) — data cache keyed by field path (ref because it's a cache, not a render trigger)
+
+### Sequential Load Queue
+
+Only one `dataExecutor` exists (hook limitation). Fields are queued and loaded one at a time:
+
+```js
+loadQueueRef = ["field_a", "field_b"]    // fields waiting
+loadingFieldRef = "field_a"               // currently loading
+
+processQueue():
+  if nothing loading and queue not empty:
+    pop next field → set status to loading → call dataExecutor.execute()
+
+on executor complete:
+  stash result in dataStoreRef[field] → set status to loaded → call processQueue()
+```
+
+A `processedResultRef` tracks the last processed executor result to prevent duplicate processing when React re-fires effects.
+
+### ChartCard Component
+
+Each chart renders as a `ChartCard` with:
+- **Header bar**: field label (left), move up/down/remove buttons (right)
+- **Body**: SVGChart when loaded, CircularProgress when loading, error message on failure
+- All charts share the same `handleFrameSeek` callback and `effectiveFrame` — clicking any chart seeks the video, and the frame indicator syncs across all charts
+
+### localStorage Persistence
+
+- **Key**: `"video-detection-chart:fields:" + datasetName`
+- **Value**: JSON array of field paths `["detections.detections", "some_float_field"]`
+- **Save**: useEffect watching `charts` array
+- **Restore**: on field discovery — filter saved fields to available ones, fall back to default
+
+### Sample Change Handling
+
+When `modalSampleId` changes: data cache clears, chart selections (field list) persist, all chart fields are re-queued for loading. The `groupDataLoadedRef` guard prevents unnecessary reloads during intra-group navigation in dynamic groups.
 
 ## SVG Chart Details
 
