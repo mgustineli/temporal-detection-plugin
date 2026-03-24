@@ -6,6 +6,9 @@
 //   - Video → Chart: vertical blue line tracks current frame
 //   - Chart → Video: click/drag on chart seeks the video
 //
+// Supports multiple charts with add/remove/reorder and
+// per-dataset localStorage persistence.
+//
 // Hand-written UMD (no build step). Uses FiftyOne globals:
 //   __fos__ (state), __foo__ (operators), __fop__ (plugins),
 //   __mui__ (MUI), React, recoil
@@ -226,6 +229,27 @@
         modalLooker.pause();
       }
     }
+  }
+
+  // ==========================================================
+  // localStorage helpers for chart persistence
+  // ==========================================================
+  var LS_PREFIX = "video-detection-chart:fields:";
+
+  function saveChartFields(datasetName, charts) {
+    if (!datasetName) return;
+    try {
+      var fieldPaths = charts.map(function (c) { return c.field; });
+      localStorage.setItem(LS_PREFIX + datasetName, JSON.stringify(fieldPaths));
+    } catch (e) { /* quota errors etc */ }
+  }
+
+  function loadChartFields(datasetName) {
+    if (!datasetName) return null;
+    try {
+      var raw = localStorage.getItem(LS_PREFIX + datasetName);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
   }
 
   // ==========================================================
@@ -594,38 +618,228 @@
   }
 
   // ==========================================================
+  // Component: ChartCard
+  // Wraps a single chart with header (label + action buttons)
+  // and handles loading/error/data states.
+  // ==========================================================
+  var CARD_BTN_STYLE = {
+    background: "none",
+    border: "none",
+    color: "#8F8D8B",
+    cursor: "pointer",
+    padding: "2px 6px",
+    fontSize: "12px",
+    lineHeight: "1",
+    borderRadius: "3px",
+    fontFamily: "sans-serif",
+  };
+
+  function ChartCard(props) {
+    var field = props.field;
+    var label = props.label;
+    var data = props.data;
+    var loading = props.loading;
+    var error = props.error;
+    var chartIndex = props.chartIndex;
+    var totalCharts = props.totalCharts;
+    var onRemove = props.onRemove;
+    var onMoveUp = props.onMoveUp;
+    var onMoveDown = props.onMoveDown;
+    var currentFrame = props.currentFrame;
+    var totalFrames = props.totalFrames;
+    var onFrameSeek = props.onFrameSeek;
+    var width = props.width;
+
+    var body;
+    if (loading) {
+      body = h(
+        Box,
+        {
+          sx: {
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            height: CHART_HEIGHT,
+            bgcolor: "#18191A",
+            gap: 1,
+          },
+        },
+        h(CircularProgress, { size: 28, sx: { color: "#FF6D04" } }),
+        h(
+          Typography,
+          { variant: "body2", sx: { color: "#8F8D8B" } },
+          "Loading " + field + "\u2026",
+        ),
+      );
+    } else if (error) {
+      body = h(
+        Box,
+        {
+          sx: {
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            height: CHART_HEIGHT,
+            bgcolor: "#18191A",
+            gap: 1,
+          },
+        },
+        h(
+          Typography,
+          { sx: { color: "#FF6767", fontSize: "13px" } },
+          "Error: " + error,
+        ),
+      );
+    } else if (data && data.frames && data.frames.length > 0) {
+      body = h(SVGChart, {
+        frames: data.frames,
+        counts: data.counts,
+        currentFrame: currentFrame,
+        totalFrames: totalFrames,
+        onFrameSeek: onFrameSeek,
+        width: width,
+        yAxisTitle: label,
+      });
+    } else {
+      body = h(
+        Box,
+        {
+          sx: {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            height: CHART_HEIGHT,
+            bgcolor: "#18191A",
+          },
+        },
+        h(
+          Typography,
+          { sx: { color: "#8F8D8B" } },
+          "No data available for this field",
+        ),
+      );
+    }
+
+    return h(
+      "div",
+      {
+        style: {
+          marginBottom: "4px",
+          borderRadius: "6px",
+          overflow: "hidden",
+          backgroundColor: "#18191A",
+        },
+      },
+      // Header bar
+      h(
+        "div",
+        {
+          style: {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "4px 8px",
+            backgroundColor: "#111213",
+            borderBottom: "1px solid #2A2A2A",
+          },
+        },
+        h(
+          "span",
+          {
+            style: {
+              color: "#C1BFBD",
+              fontSize: "12px",
+              fontFamily: "monospace",
+            },
+          },
+          label,
+        ),
+        h(
+          "div",
+          { style: { display: "flex", gap: "2px" } },
+          // Move up
+          h(
+            "button",
+            {
+              onClick: function () { onMoveUp(chartIndex); },
+              disabled: chartIndex === 0,
+              style: Object.assign(
+                {},
+                CARD_BTN_STYLE,
+                chartIndex === 0 ? { opacity: 0.3, cursor: "default" } : {},
+              ),
+              title: "Move up",
+            },
+            "\u25B2",
+          ),
+          // Move down
+          h(
+            "button",
+            {
+              onClick: function () { onMoveDown(chartIndex); },
+              disabled: chartIndex === totalCharts - 1,
+              style: Object.assign(
+                {},
+                CARD_BTN_STYLE,
+                chartIndex === totalCharts - 1 ? { opacity: 0.3, cursor: "default" } : {},
+              ),
+              title: "Move down",
+            },
+            "\u25BC",
+          ),
+          // Remove
+          h(
+            "button",
+            {
+              onClick: function () { onRemove(chartIndex); },
+              style: Object.assign({}, CARD_BTN_STYLE, { color: "#FF6767" }),
+              title: "Remove chart",
+            },
+            "\u2715",
+          ),
+        ),
+      ),
+      // Body
+      body,
+    );
+  }
+
+  // ==========================================================
   // Main Panel Component
   // ==========================================================
   function DetectionCountPlotPanel() {
-    // --- State ---
-    var _data = useState(null);
-    var data = _data[0];
-    var setData = _data[1];
+    // --- Multi-chart state ---
+    var _charts = useState([]);
+    var charts = _charts[0];
+    var setCharts = _charts[1];
 
-    var _loading = useState(true);
-    var loading = _loading[0];
-    var setLoading = _loading[1];
+    var _chartStatus = useState({});
+    var chartStatus = _chartStatus[0];
+    var setChartStatus = _chartStatus[1];
 
-    var _error = useState(null);
-    var error = _error[0];
-    var setError = _error[1];
+    var dataStoreRef = useRef({});
 
-    var _width = useState(800);
-    var containerWidth = _width[0];
-    var setContainerWidth = _width[1];
+    // --- Load queue ---
+    var loadQueueRef = useRef([]);
+    var loadingFieldRef = useRef(null);
+    var processedResultRef = useRef(null);
+    var nextIdRef = useRef(1);
+    var datasetNameRef = useRef("");
 
-    // Field selector state
+    // --- Field discovery state ---
     var _fields = useState([]);
     var fields = _fields[0];
     var setFields = _fields[1];
 
-    var _selectedField = useState("");
-    var selectedField = _selectedField[0];
-    var setSelectedField = _selectedField[1];
-
     var _fieldsLoading = useState(true);
     var fieldsLoading = _fieldsLoading[0];
     var setFieldsLoading = _fieldsLoading[1];
+
+    var _width = useState(800);
+    var containerWidth = _width[0];
+    var setContainerWidth = _width[1];
 
     var containerRef = useRef(null);
     var prevSampleRef = useRef(null);
@@ -635,7 +849,6 @@
     try {
       modalSampleId = useRecoilValue(fos.modalSampleId);
     } catch (e) {
-      // Fallback: try alternative atoms
       console.warn(LOG_PREFIX, "fos.modalSampleId failed, trying fallback", e);
       modalSampleId = null;
     }
@@ -678,11 +891,31 @@
       );
     }
 
-    // --- Load fields when sample changes ---
-    // For dynamic groups, data covers the whole group — skip reload on
-    // intra-group navigation (sample ID changes but data is the same).
+    // --- Process queue: load fields one at a time ---
+    var processQueue = function () {
+      if (loadingFieldRef.current) return;
+      if (loadQueueRef.current.length === 0) return;
+      if (!dataExecutor || !modalSampleId) return;
+
+      var field = loadQueueRef.current.shift();
+      loadingFieldRef.current = field;
+
+      setChartStatus(function (prev) {
+        var next = Object.assign({}, prev);
+        next[field] = { loading: true, error: null };
+        return next;
+      });
+
+      console.log(LOG_PREFIX, "Loading field", field);
+      dataExecutor.execute({ sample_id: modalSampleId, field: field });
+    };
+    var processQueueRef = useRef(processQueue);
+    processQueueRef.current = processQueue;
+
+    // --- Dynamic group guard ---
     var groupDataLoadedRef = useRef(false);
 
+    // --- Load fields when sample changes ---
     useEffect(
       function () {
         if (!modalSampleId || !fieldsExecutor) return;
@@ -695,11 +928,14 @@
         prevSampleRef.current = modalSampleId;
 
         setFieldsLoading(true);
-        setLoading(true);
-        setError(null);
-        setData(null);
-        setFields([]);
-        setSelectedField("");
+
+        // Clear data cache and queue
+        dataStoreRef.current = {};
+        sampleIdToFrame.current = null;
+        frameToSampleId.current = null;
+        loadQueueRef.current = [];
+        loadingFieldRef.current = null;
+        processedResultRef.current = null;
 
         console.log(LOG_PREFIX, "Discovering fields for sample", modalSampleId);
         fieldsExecutor.execute({ sample_id: modalSampleId });
@@ -707,16 +943,14 @@
       [modalSampleId],
     );
 
-    // --- Watch fields result → auto-select first field → load data ---
+    // --- Watch fields result → initialize charts → queue data loads ---
     useEffect(
       function () {
         if (!fieldsExecutor) return;
         if (fieldsExecutor.isExecuting) return;
 
         if (fieldsExecutor.error) {
-          setError("Could not discover temporal fields");
           setFieldsLoading(false);
-          setLoading(false);
           return;
         }
 
@@ -726,17 +960,52 @@
         var payload = result.result || result;
 
         if (payload.error) {
-          setError(payload.error);
           setFieldsLoading(false);
-          setLoading(false);
           return;
         }
 
-        if (payload.fields && payload.fields.length > 0) {
-          setFields(payload.fields);
+        if (!payload.fields || payload.fields.length === 0) {
+          setFields([]);
           setFieldsLoading(false);
+          return;
+        }
 
-          // Auto-select: prefer "detections.detections" if present, else first
+        setFields(payload.fields);
+        setFieldsLoading(false);
+
+        // Store dataset name for localStorage key
+        if (payload.dataset_name) {
+          datasetNameRef.current = payload.dataset_name;
+        }
+
+        var availablePaths = payload.fields.map(function (f) { return f.path; });
+        var initialFields = null;
+
+        // 1. If we already have charts (sample change), keep them filtered
+        if (charts.length > 0) {
+          var surviving = charts
+            .map(function (c) { return c.field; })
+            .filter(function (f) { return availablePaths.indexOf(f) >= 0; });
+          if (surviving.length > 0) {
+            initialFields = surviving;
+          }
+        }
+
+        // 2. Try localStorage
+        if (!initialFields) {
+          var saved = loadChartFields(datasetNameRef.current);
+          if (saved && saved.length > 0) {
+            var valid = saved.filter(function (f) {
+              return availablePaths.indexOf(f) >= 0;
+            });
+            if (valid.length > 0) {
+              initialFields = valid;
+            }
+          }
+        }
+
+        // 3. Default: prefer "detections.detections" if present
+        if (!initialFields) {
           var defaultField = payload.fields[0].path;
           for (var i = 0; i < payload.fields.length; i++) {
             if (payload.fields[i].path === "detections.detections") {
@@ -744,21 +1013,27 @@
               break;
             }
           }
-          setSelectedField(defaultField);
-
-          // Load data for the auto-selected field
-          if (dataExecutor && modalSampleId) {
-            console.log(LOG_PREFIX, "Loading field", defaultField);
-            dataExecutor.execute({
-              sample_id: modalSampleId,
-              field: defaultField,
-            });
-          }
-        } else {
-          setFields([]);
-          setFieldsLoading(false);
-          setLoading(false);
+          initialFields = [defaultField];
         }
+
+        // Create chart entries
+        nextIdRef.current = 1;
+        var newCharts = initialFields.map(function (f) {
+          return { id: nextIdRef.current++, field: f };
+        });
+        setCharts(newCharts);
+
+        // Initialize status and queue all for loading
+        var statusInit = {};
+        for (var si = 0; si < initialFields.length; si++) {
+          statusInit[initialFields[si]] = { loading: true, error: null };
+        }
+        setChartStatus(statusInit);
+
+        loadQueueRef.current = initialFields.slice();
+        setTimeout(function () {
+          processQueueRef.current();
+        }, 0);
       },
       [
         fieldsExecutor && fieldsExecutor.isExecuting,
@@ -766,35 +1041,48 @@
       ],
     );
 
-    // --- Watch data result ---
+    // --- Watch data result → stash in cache → advance queue ---
     useEffect(
       function () {
         if (!dataExecutor) return;
         if (dataExecutor.isExecuting) return;
 
-        if (dataExecutor.error) {
-          setError(String(dataExecutor.error));
-          setLoading(false);
-          return;
-        }
-
         var result = dataExecutor.result;
-        if (!result) return;
+        if (!result || result === processedResultRef.current) return;
+        processedResultRef.current = result;
+
+        var field = loadingFieldRef.current;
+        if (!field) return;
 
         var payload = result.result || result;
 
-        if (payload.error) {
-          setError(payload.error);
+        if (dataExecutor.error) {
+          setChartStatus(function (prev) {
+            var next = Object.assign({}, prev);
+            next[field] = { loading: false, error: String(dataExecutor.error) };
+            return next;
+          });
+        } else if (payload.error) {
+          setChartStatus(function (prev) {
+            var next = Object.assign({}, prev);
+            next[field] = { loading: false, error: payload.error };
+            return next;
+          });
         } else if (payload.frames && payload.values) {
-          // Map "values" to "counts" for SVGChart compatibility
-          setData({
+          // Stash data in cache
+          dataStoreRef.current[field] = {
             frames: payload.frames,
             counts: payload.values,
             fps: payload.fps,
             total_frames: payload.total_frames,
-          });
-          // Build sample ID ↔ frame number mappings for carousel mode
-          if (payload.sample_ids && payload.sample_ids.length > 0) {
+          };
+
+          // Build sample ID ↔ frame number mappings (from first chart with sample_ids)
+          if (
+            payload.sample_ids &&
+            payload.sample_ids.length > 0 &&
+            !sampleIdToFrame.current
+          ) {
             var s2f = {};
             var f2s = {};
             for (var mi = 0; mi < payload.sample_ids.length; mi++) {
@@ -809,19 +1097,33 @@
               setCarouselFrame(s2f[modalSampleId]);
             }
           }
+
           // Mark dynamic group data as loaded to prevent reloads on navigation
           if (isDynamicGroup) {
             groupDataLoadedRef.current = true;
           }
+
+          setChartStatus(function (prev) {
+            var next = Object.assign({}, prev);
+            next[field] = { loading: false, error: null };
+            return next;
+          });
+
           console.log(
             LOG_PREFIX,
             "Loaded",
             payload.frames.length,
             "frames for",
-            payload.field,
+            field,
           );
         }
-        setLoading(false);
+
+        loadingFieldRef.current = null;
+
+        // Process next in queue
+        setTimeout(function () {
+          processQueueRef.current();
+        }, 0);
       },
       [
         dataExecutor && dataExecutor.isExecuting,
@@ -855,24 +1157,91 @@
       };
     }, []);
 
-    // --- Field change handler ---
-    var handleFieldChange = useCallback(
-      function (e) {
-        var newField = e.target.value;
-        setSelectedField(newField);
-        setLoading(true);
-        setError(null);
-        setData(null);
-        if (dataExecutor && modalSampleId) {
-          console.log(LOG_PREFIX, "Switching to field", newField);
-          dataExecutor.execute({ sample_id: modalSampleId, field: newField });
+    // --- Save charts to localStorage when they change ---
+    useEffect(
+      function () {
+        if (datasetNameRef.current) {
+          saveChartFields(datasetNameRef.current, charts);
         }
       },
-      [modalSampleId, dataExecutor],
+      [charts],
     );
 
+    // --- Add chart handler ---
+    var handleAddChart = useCallback(
+      function (e) {
+        var newField = e.target.value;
+        if (!newField) return;
+        e.target.value = "";
+
+        setCharts(function (prev) {
+          return prev.concat([{ id: nextIdRef.current++, field: newField }]);
+        });
+
+        if (dataStoreRef.current[newField]) {
+          // Already cached — mark as loaded
+          setChartStatus(function (prev) {
+            var next = Object.assign({}, prev);
+            next[newField] = { loading: false, error: null };
+            return next;
+          });
+        } else {
+          // Queue for loading
+          loadQueueRef.current.push(newField);
+          setChartStatus(function (prev) {
+            var next = Object.assign({}, prev);
+            next[newField] = { loading: true, error: null };
+            return next;
+          });
+          setTimeout(function () {
+            processQueueRef.current();
+          }, 0);
+        }
+      },
+      [],
+    );
+
+    // --- Remove chart handler ---
+    var handleRemoveChart = useCallback(function (index) {
+      setCharts(function (prev) {
+        return prev.filter(function (_, i) {
+          return i !== index;
+        });
+      });
+    }, []);
+
+    // --- Move handlers ---
+    var handleMoveUp = useCallback(function (index) {
+      if (index <= 0) return;
+      setCharts(function (prev) {
+        var next = prev.slice();
+        var temp = next[index - 1];
+        next[index - 1] = next[index];
+        next[index] = temp;
+        return next;
+      });
+    }, []);
+
+    var handleMoveDown = useCallback(function (index) {
+      setCharts(function (prev) {
+        if (index >= prev.length - 1) return prev;
+        var next = prev.slice();
+        var temp = next[index + 1];
+        next[index + 1] = next[index];
+        next[index] = temp;
+        return next;
+      });
+    }, []);
+
     // --- Chart → Video seeking ---
-    var fpsForSeek = (data && data.fps) || 30;
+    var fpsForSeek = 30;
+    for (var fi = 0; fi < charts.length; fi++) {
+      var fData = dataStoreRef.current[charts[fi].field];
+      if (fData) {
+        fpsForSeek = fData.fps || 30;
+        break;
+      }
+    }
 
     var handleFrameSeek = useCallback(
       function (frame) {
@@ -905,17 +1274,21 @@
       [isDynamicGroup, isCarousel, isImaVid, setDynamicGroupIndex, setModalSample, modalLooker, fpsForSeek],
     );
 
-    // --- Derive Y-axis label from selected field ---
-    var yAxisLabel = "Value";
-    for (var fi = 0; fi < fields.length; fi++) {
-      if (fields[fi].path === selectedField) {
-        yAxisLabel = fields[fi].label;
+    // --- Derive display info from first loaded chart ---
+    var firstData = null;
+    var statusTotalFrames = 0;
+    for (var di = 0; di < charts.length; di++) {
+      var dd = dataStoreRef.current[charts[di].field];
+      if (dd) {
+        firstData = dd;
+        statusTotalFrames = dd.total_frames || dd.frames.length;
         break;
       }
     }
+    var effectiveFrame = isCarousel ? carouselFrame : frameNumber;
 
-    // --- Render: Loading ---
-    if (loading) {
+    // --- Render: Field discovery loading ---
+    if (fieldsLoading) {
       return h(
         Box,
         {
@@ -935,41 +1308,13 @@
         h(
           Typography,
           { variant: "body2", sx: { color: "#8F8D8B" } },
-          fieldsLoading
-            ? "Discovering fields\u2026"
-            : "Loading " + (selectedField || "data") + "\u2026",
+          "Discovering fields\u2026",
         ),
       );
     }
 
-    // --- Render: Error ---
-    if (error) {
-      return h(
-        Box,
-        {
-          ref: containerRef,
-          sx: {
-            padding: 3,
-            bgcolor: "#18191A",
-            borderRadius: 1.5,
-            textAlign: "center",
-          },
-        },
-        h(
-          Typography,
-          { sx: { color: "#FF6767", mb: 1 } },
-          "Error loading data",
-        ),
-        h(
-          Typography,
-          { variant: "body2", sx: { color: "#8F8D8B" } },
-          String(error),
-        ),
-      );
-    }
-
-    // --- Render: No data ---
-    if (!data || !data.frames || data.frames.length === 0) {
+    // --- Render: No fields ---
+    if (fields.length === 0) {
       return h(
         Box,
         {
@@ -984,24 +1329,28 @@
         h(
           Typography,
           { sx: { color: "#8F8D8B" } },
-          fields.length === 0
-            ? "No plottable fields found for this sample"
-            : "No data available for this field",
+          "No plottable fields found for this sample",
         ),
       );
     }
 
-    // --- Render: Chart ---
-    var totalFrames = data.total_frames || data.frames.length;
-    var effectiveFrame = isCarousel ? carouselFrame : frameNumber;
+    // --- Build "Add chart" options (fields not already in charts) ---
+    var usedFields = {};
+    for (var ui = 0; ui < charts.length; ui++) {
+      usedFields[charts[ui].field] = true;
+    }
+    var addOptions = fields.filter(function (f) {
+      return !usedFields[f.path];
+    });
 
+    // --- Render: Multi-chart UI ---
     return h(
       Box,
       {
         ref: containerRef,
         sx: { width: "100%", overflow: "hidden" },
       },
-      // Toolbar with field selector
+      // Toolbar with "Add chart" dropdown
       h(
         "div",
         {
@@ -1016,22 +1365,11 @@
           },
         },
         h(
-          "span",
-          {
-            style: {
-              color: "#8F8D8B",
-              fontSize: "12px",
-              fontFamily: "sans-serif",
-            },
-          },
-          "Field",
-        ),
-        h(
           "select",
           {
-            value: selectedField,
-            onChange: handleFieldChange,
-            disabled: fieldsLoading || fields.length === 0,
+            value: "",
+            onChange: handleAddChart,
+            disabled: addOptions.length === 0,
             style: {
               backgroundColor: "#18191A",
               color: "#C1BFBD",
@@ -1041,7 +1379,7 @@
               fontSize: "12px",
               fontFamily: "monospace",
               outline: "none",
-              cursor: "pointer",
+              cursor: addOptions.length > 0 ? "pointer" : "default",
               minWidth: "180px",
               appearance: "none",
               WebkitAppearance: "none",
@@ -1049,23 +1387,81 @@
                 "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238F8D8B'/%3E%3C/svg%3E\")",
               backgroundRepeat: "no-repeat",
               backgroundPosition: "right 8px center",
+              opacity: addOptions.length === 0 ? 0.5 : 1,
             },
           },
-          fields.map(function (f) {
+          h(
+            "option",
+            { value: "" },
+            addOptions.length > 0 ? "Add chart\u2026" : "All fields added",
+          ),
+          addOptions.map(function (f) {
             return h("option", { key: f.path, value: f.path }, f.label);
           }),
         ),
       ),
-      // SVG Chart
-      h(SVGChart, {
-        frames: data.frames,
-        counts: data.counts,
-        currentFrame: effectiveFrame,
-        totalFrames: totalFrames,
-        onFrameSeek: handleFrameSeek,
-        width: containerWidth,
-        yAxisTitle: yAxisLabel,
-      }),
+      // Scrollable chart container
+      h(
+        "div",
+        {
+          style: {
+            overflowY: "auto",
+            maxHeight: charts.length > 2 ? (CHART_HEIGHT + 50) * 2 + "px" : "none",
+          },
+        },
+        charts.length === 0
+          ? h(
+              Box,
+              {
+                sx: {
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  height: CHART_HEIGHT,
+                  bgcolor: "#18191A",
+                },
+              },
+              h(
+                Typography,
+                { sx: { color: "#8F8D8B" } },
+                "Add a chart to get started",
+              ),
+            )
+          : charts.map(function (chart, idx) {
+              var fieldData = dataStoreRef.current[chart.field];
+              var status = chartStatus[chart.field] || { loading: true, error: null };
+              var chartTotalFrames = fieldData
+                ? (fieldData.total_frames || fieldData.frames.length)
+                : statusTotalFrames;
+
+              // Find label for this field
+              var label = chart.field;
+              for (var li = 0; li < fields.length; li++) {
+                if (fields[li].path === chart.field) {
+                  label = fields[li].label;
+                  break;
+                }
+              }
+
+              return h(ChartCard, {
+                key: chart.id,
+                field: chart.field,
+                label: label,
+                data: fieldData,
+                loading: status.loading,
+                error: status.error,
+                chartIndex: idx,
+                totalCharts: charts.length,
+                onRemove: handleRemoveChart,
+                onMoveUp: handleMoveUp,
+                onMoveDown: handleMoveDown,
+                currentFrame: effectiveFrame,
+                totalFrames: chartTotalFrames,
+                onFrameSeek: handleFrameSeek,
+                width: containerWidth,
+              });
+            }),
+      ),
       // Status bar
       h(
         Box,
@@ -1084,12 +1480,15 @@
         h(
           Typography,
           { variant: "body2", sx: { color: "#8F8D8B", fontFamily: "monospace" } },
-          "Frame " + effectiveFrame + " / " + totalFrames,
+          "Frame " + effectiveFrame + " / " + (statusTotalFrames || "?"),
         ),
         h(
           Typography,
           { variant: "body2", sx: { color: "#8F8D8B", fontFamily: "monospace" } },
-          data.fps + " FPS \u00B7 " + data.frames.length + " frames with data",
+          (firstData ? firstData.fps : "?") +
+            " FPS \u00B7 " +
+            charts.length +
+            (charts.length === 1 ? " chart" : " charts"),
         ),
         h(
           Typography,

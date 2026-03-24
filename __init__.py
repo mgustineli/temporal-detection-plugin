@@ -139,7 +139,7 @@ class GetTemporalFields(foo.Operator):
     def execute(self, ctx):
         try:
             fields = _get_fields(ctx)
-            return {"fields": fields}
+            return {"fields": fields, "dataset_name": ctx.dataset.name}
         except Exception as e:
             print(f"{LOG_PREFIX} Error discovering fields: {e}")
             return {"error": str(e)}
