@@ -1,5 +1,5 @@
 // ============================================================
-// DetectionCountPlotInteractive — JS Panel for video-detection-chart
+// TemporalDataExplorer — JS Panel for temporal-detection
 //
 // SVG line chart of per-frame temporal data with bidirectional
 // video sync:
@@ -38,7 +38,7 @@
   var Typography = mui.Typography;
   var CircularProgress = mui.CircularProgress;
 
-  var LOG_PREFIX = "[DetectionCountPlot]";
+  var LOG_PREFIX = "[TemporalDataExplorer]";
 
   // --- Constants ---
   var CHART_HEIGHT = 350;
@@ -264,7 +264,7 @@
   // ==========================================================
   // localStorage helpers for chart persistence
   // ==========================================================
-  var LS_PREFIX = "video-detection-chart:fields:";
+  var LS_PREFIX = "temporal-detection:fields:";
 
   function saveChartFields(datasetName, charts) {
     if (!datasetName) return;
@@ -1350,10 +1350,10 @@
     var dataExecutor = null;
     if (foo && typeof foo.useOperatorExecutor === "function") {
       fieldsExecutor = foo.useOperatorExecutor(
-        "video-detection-chart/get_temporal_fields",
+        "temporal-detection/get_temporal_fields",
       );
       dataExecutor = foo.useOperatorExecutor(
-        "video-detection-chart/get_frame_values",
+        "temporal-detection/get_frame_values",
       );
     } else {
       console.error(
@@ -2055,11 +2055,11 @@
   // ==========================================================
   // Register Panel
   // ==========================================================
-  console.log(LOG_PREFIX, "Registering DetectionCountPlotInteractive panel");
+  console.log(LOG_PREFIX, "Registering TemporalDataExplorer panel");
 
   fop.registerComponent({
-    name: "DetectionCountPlotInteractive",
-    label: "Detection Count Plot (Interactive)",
+    name: "TemporalDataExplorer",
+    label: "Temporal Data Explorer",
     component: DetectionCountPlotPanel,
     type: fop.PluginComponentType.Panel,
     Icon: ChartIcon,

@@ -1,5 +1,5 @@
 {
-  "name": "video-detection-chart",
+  "name": "temporal-detection",
   "version": "1.0.0",
   "fiftyone": {
     "script": "index.umd.js"

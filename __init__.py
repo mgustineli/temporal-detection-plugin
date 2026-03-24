@@ -18,7 +18,7 @@ import fiftyone.operators as foo
 import fiftyone.operators.types as types
 from fiftyone import ViewField as F
 
-LOG_PREFIX = "[VideoDetectionChart]"
+LOG_PREFIX = "[TemporalDetection]"
 
 
 def _is_dynamic_groups(ctx):
