@@ -15,6 +15,7 @@ start_foe_dev.sh
 
 # Environment variables and credentials
 .env
+pyproject.toml
 gcp-credentials.json
 azure-storage.ini
 projects/grouped-datasets-delegated-ops/*.egg-info/
