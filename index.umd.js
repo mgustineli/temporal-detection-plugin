@@ -259,37 +259,30 @@
 
   // ==========================================================
   // Utility: seekImaVidToFrame
-  // Calls drawFrameNoAnimation directly on the ImaVidElement,
-  // matching how FiftyOne's own timeline renderFrame callback
-  // works in ImaVidLookerReact. drawFrameNoAnimation handles
-  // image retrieval from frame store, canvas painting, state
-  // update, and retry if the frame isn't buffered yet.
+  // Dispatches a timeline CustomEvent to seek the ImaVid player.
+  // This is the same mechanism FiftyOne's built-in set_frame_number
+  // operator and seek bar use. It updates:
+  //   - The canvas (via renderFrame → drawFrameNoAnimation)
+  //   - The Jotai frame number atom (resume point for playback)
+  //   - The status indicator ("30/38" counter)
+  //   - The seek bar position
   // ==========================================================
-  function seekImaVidToFrame(frameNumber, modalLooker) {
-    if (!modalLooker) return;
+  function seekImaVidToFrame(frameNumber) {
+    var params = new URLSearchParams(window.location.search);
+    var sampleId = params.get("id");
+    var groupId = params.get("groupId");
 
-    // Access the ImaVidElement via lookerElement.children[0]
-    // This matches ImaVidLooker.element getter: this.lookerElement.children[0]
-    var el =
-      modalLooker.lookerElement &&
-      modalLooker.lookerElement.children &&
-      modalLooker.lookerElement.children[0];
+    if (!sampleId && !groupId) return;
 
-    if (el && typeof el.drawFrameNoAnimation === "function") {
-      el.drawFrameNoAnimation(frameNumber);
-    }
+    var timelineName = groupId
+      ? "timeline-" + groupId
+      : "timeline-" + sampleId;
 
-    // Update the looker's internal state so playback resumes from here
-    if (typeof modalLooker.updater === "function") {
-      modalLooker.updater({ currentFrameNumber: frameNumber });
-    }
-
-    // Pause if playing (stay on the seeked frame)
-    if (modalLooker.state && modalLooker.state.playing) {
-      if (typeof modalLooker.pause === "function") {
-        modalLooker.pause();
-      }
-    }
+    window.dispatchEvent(
+      new CustomEvent("set-frame-number-" + timelineName, {
+        detail: { frameNumber: Math.max(frameNumber, 1) },
+      }),
+    );
   }
 
   // ==========================================================
@@ -1987,12 +1980,8 @@
     var handleFrameSeek = useCallback(
       function (frame) {
         if (isDynamicGroup && isImaVid) {
-          // Video mode: seek the ImaVid looker directly
-          seekImaVidToFrame(frame, modalLooker);
-          // Update Recoil state so playback resumes from the seeked frame
-          setImaVidFrameNumber(frame);
-          // Update dynamic group index (controls timeline position)
-          setDynamicGroupIndex(frame - 1);
+          // Video mode: dispatch timeline event (handles canvas, jotai atoms, and resume point)
+          seekImaVidToFrame(frame);
         } else if (isCarousel) {
           // Carousel mode: navigate via modalSelector
           var targetSampleId =
@@ -2010,14 +1999,13 @@
           setDynamicGroupIndex(frame - 1);
         } else if (isImaVid) {
           // ImaVid (non-dynamic-group)
-          seekImaVidToFrame(frame, modalLooker);
-          setImaVidFrameNumber(frame);
+          seekImaVidToFrame(frame);
         } else {
           // Native video
           seekVideoToFrame(frame, modalLooker, fpsForSeek);
         }
       },
-      [isDynamicGroup, isCarousel, isImaVid, setDynamicGroupIndex, setModalSample, setImaVidFrameNumber, modalLooker, fpsForSeek],
+      [isDynamicGroup, isCarousel, isImaVid, setDynamicGroupIndex, setModalSample, modalLooker, fpsForSeek],
     );
 
     // --- Derive display info from first loaded chart ---
