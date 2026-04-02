@@ -721,6 +721,7 @@
 
     var svgRef = useRef(null);
     var wrapRef = useRef(null);
+    var filterBtnRef = useRef(null);
 
     if (!labels || labels.length === 0) {
       return h(
@@ -1135,12 +1136,12 @@
           padding: "4px 8px",
           backgroundColor: "#111213",
           borderBottom: "1px solid #2A2A2A",
-          position: "relative",
         },
       },
       h(
         "button",
         {
+          ref: filterBtnRef,
           onClick: function () { setFilterOpen(function (v) { return !v; }); },
           style: {
             background: labelFilter ? "#1A2A3A" : "none",
@@ -1173,98 +1174,104 @@
             "Show all",
           )
         : null,
-      // Dropdown panel
-      filterOpen
-        ? h(
+    );
+
+    // Dropdown panel — rendered via portal to overlay other charts
+    var filterDropdown = null;
+    if (filterOpen && filterBtnRef.current) {
+      var btnRect = filterBtnRef.current.getBoundingClientRect();
+      filterDropdown = window.ReactDOM.createPortal(
+        h(
+          "div",
+          {
+            style: {
+              position: "fixed",
+              top: btnRect.bottom + 2 + "px",
+              left: btnRect.left + "px",
+              zIndex: 99999,
+              backgroundColor: "#1E1F20",
+              border: "1px solid #404040",
+              borderRadius: "4px",
+              padding: "6px 0",
+              maxHeight: "300px",
+              overflowY: "auto",
+              minWidth: "220px",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+            },
+          },
+          // Select all / Clear all
+          h(
             "div",
             {
               style: {
-                position: "absolute",
-                top: "100%",
-                left: "8px",
-                zIndex: 100,
-                backgroundColor: "#1E1F20",
-                border: "1px solid #404040",
-                borderRadius: "4px",
-                padding: "6px 0",
-                maxHeight: "250px",
-                overflowY: "auto",
-                minWidth: "220px",
-                boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+                display: "flex",
+                gap: "12px",
+                padding: "2px 12px 6px",
+                borderBottom: "1px solid #333",
+                marginBottom: "4px",
               },
             },
-            // Select all / Clear all
             h(
-              "div",
+              "span",
               {
+                onClick: function () { setLabelFilter(null); },
+                style: { color: "#4FC3F7", fontSize: "11px", cursor: "pointer", fontFamily: "sans-serif" },
+              },
+              "Select all",
+            ),
+            h(
+              "span",
+              {
+                onClick: function () { setLabelFilter([]); },
+                style: { color: "#4FC3F7", fontSize: "11px", cursor: "pointer", fontFamily: "sans-serif" },
+              },
+              "Clear all",
+            ),
+          ),
+          // Label checkboxes
+          labels.map(function (lbl) {
+            var isChecked = !labelFilter || labelFilter.indexOf(lbl) >= 0;
+            return h(
+              "label",
+              {
+                key: lbl,
                 style: {
                   display: "flex",
-                  gap: "12px",
-                  padding: "2px 12px 6px",
-                  borderBottom: "1px solid #333",
-                  marginBottom: "4px",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "3px 12px",
+                  cursor: "pointer",
+                  fontSize: "11px",
+                  fontFamily: "monospace",
+                  color: isChecked ? "#C1BFBD" : "#666",
                 },
+                onMouseEnter: function (e) { e.currentTarget.style.backgroundColor = "#2A2A2A"; },
+                onMouseLeave: function (e) { e.currentTarget.style.backgroundColor = "transparent"; },
               },
-              h(
-                "span",
-                {
-                  onClick: function () { setLabelFilter(null); },
-                  style: { color: "#4FC3F7", fontSize: "11px", cursor: "pointer", fontFamily: "sans-serif" },
+              h("input", {
+                type: "checkbox",
+                checked: isChecked,
+                onChange: function () { handleFilterToggle(lbl); },
+                style: { accentColor: labelColor(lbl), cursor: "pointer" },
+              }),
+              h("span", {
+                style: {
+                  display: "inline-block",
+                  width: "8px",
+                  height: "8px",
+                  backgroundColor: labelColor(lbl),
+                  borderRadius: "1px",
+                  flexShrink: 0,
+                  opacity: isChecked ? 1 : 0.3,
                 },
-                "Select all",
-              ),
-              h(
-                "span",
-                {
-                  onClick: function () { setLabelFilter([]); },
-                  style: { color: "#4FC3F7", fontSize: "11px", cursor: "pointer", fontFamily: "sans-serif" },
-                },
-                "Clear all",
-              ),
-            ),
-            // Label checkboxes
-            labels.map(function (lbl) {
-              var isChecked = !labelFilter || labelFilter.indexOf(lbl) >= 0;
-              return h(
-                "label",
-                {
-                  key: lbl,
-                  style: {
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    padding: "3px 12px",
-                    cursor: "pointer",
-                    fontSize: "11px",
-                    fontFamily: "monospace",
-                    color: isChecked ? "#C1BFBD" : "#666",
-                  },
-                  onMouseEnter: function (e) { e.currentTarget.style.backgroundColor = "#2A2A2A"; },
-                  onMouseLeave: function (e) { e.currentTarget.style.backgroundColor = "transparent"; },
-                },
-                h("input", {
-                  type: "checkbox",
-                  checked: isChecked,
-                  onChange: function () { handleFilterToggle(lbl); },
-                  style: { accentColor: labelColor(lbl), cursor: "pointer" },
-                }),
-                h("span", {
-                  style: {
-                    display: "inline-block",
-                    width: "8px",
-                    height: "8px",
-                    backgroundColor: labelColor(lbl),
-                    borderRadius: "1px",
-                    flexShrink: 0,
-                    opacity: isChecked ? 1 : 0.3,
-                  },
-                }),
-                lbl,
-              );
-            }),
-          )
-        : null,
-    );
+              }),
+              lbl,
+            );
+          }),
+        ),
+        document.body,
+      );
+    }
 
     return h(
       "div",
@@ -1281,6 +1288,7 @@
         children,
       ),
       tooltip,
+      filterDropdown,
     );
   }
 
