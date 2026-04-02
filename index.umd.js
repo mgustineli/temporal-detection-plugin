@@ -2268,7 +2268,7 @@
                 totalFrames: chartTotalFrames,
                 onFrameSeek: handleFrameSeek,
                 width: containerWidth,
-                useFrameNumber: useFrameNumberSetting,
+                useFrameNumber: isDynamicGroup ? true : useFrameNumberSetting,
                 fps: fpsForSeek,
               });
             }),
@@ -2291,7 +2291,7 @@
         h(
           Typography,
           { variant: "body2", sx: { color: "#8F8D8B", fontFamily: "monospace" } },
-          useFrameNumberSetting
+          (isDynamicGroup || useFrameNumberSetting)
             ? "Frame " + effectiveFrame + " / " + (statusTotalFrames || "?")
             : formatTimestamp(effectiveFrame, fpsForSeek) + " / " + formatTimestamp(statusTotalFrames || 1, fpsForSeek),
         ),
