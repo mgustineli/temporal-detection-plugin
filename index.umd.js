@@ -1984,6 +1984,8 @@
         if (isDynamicGroup && isImaVid) {
           // Video mode: seek the ImaVid looker directly
           seekImaVidToFrame(frame, modalLooker);
+          // Update Recoil state so playback resumes from the seeked frame
+          setImaVidFrameNumber(frame);
         } else if (isCarousel) {
           // Carousel mode: navigate via modalSelector
           var targetSampleId =
@@ -2002,12 +2004,13 @@
         } else if (isImaVid) {
           // ImaVid (non-dynamic-group)
           seekImaVidToFrame(frame, modalLooker);
+          setImaVidFrameNumber(frame);
         } else {
           // Native video
           seekVideoToFrame(frame, modalLooker, fpsForSeek);
         }
       },
-      [isDynamicGroup, isCarousel, isImaVid, setDynamicGroupIndex, setModalSample, modalLooker, fpsForSeek],
+      [isDynamicGroup, isCarousel, isImaVid, setDynamicGroupIndex, setModalSample, setImaVidFrameNumber, modalLooker, fpsForSeek],
     );
 
     // --- Derive display info from first loaded chart ---
