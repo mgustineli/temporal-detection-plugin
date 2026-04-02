@@ -1590,14 +1590,22 @@
     var setModalSample = useSetRecoilState(fos.modalSelector);
 
     // --- Video state ---
-    // Read "Use frame number" app config setting (stable selector ref for reactivity)
+    // Read "Use frame number" setting — combines app config default with
+    // runtime checkbox override from savedLookerOptions (same merge logic
+    // as FiftyOne's lookerOptions selector in looker.ts)
     var useFrameNumberSetting = true;
-    if (useFrameNumberSelector) {
-      try {
-        useFrameNumberSetting = useRecoilValue(useFrameNumberSelector);
-      } catch (e) {
-        // Fallback: default to frame numbers if atom not available
-      }
+    try {
+      var configVal = useFrameNumberSelector
+        ? useRecoilValue(useFrameNumberSelector)
+        : true;
+      var savedOpts = fos.savedLookerOptions
+        ? useRecoilValue(fos.savedLookerOptions)
+        : {};
+      useFrameNumberSetting = (savedOpts && savedOpts.useFrameNumber !== undefined)
+        ? savedOpts.useFrameNumber
+        : configVal;
+    } catch (e) {
+      // Fallback: default to frame numbers if atoms not available
     }
 
     var videoState = useVideoState();
