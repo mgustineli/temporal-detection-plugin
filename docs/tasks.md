@@ -97,6 +97,27 @@
 
 ## In Progress
 
+### Label Filtering in Heatmap
+
+- [x] Clickable label names to solo/toggle visibility (click = solo, Cmd/Ctrl+click = toggle)
+- [x] Filter status indicator with "Show all" reset link
+- [x] Filtered state is component-local (not persisted)
+
+### Timestamp Display (Frame Number vs Time)
+
+- [x] Read FiftyOne's "Use frame number" setting via `fos.appConfigOption({modal: true, key: "useFrameNumber"})`
+- [x] Format X-axis ticks as `M:SS` timestamps when setting is off (`(frame - 1) / fps`)
+- [x] Update frame indicator label and tooltip in both `SVGChart` and `LabelTimelineChart`
+- [x] Update status bar to show timestamps when setting is off
+
+### Instance Track Chart (Per-Object Binary Timeline)
+
+- [ ] Python: detect if `index` attribute is populated → `has_tracks: true/false` in field discovery
+- [ ] Python: new `mode="tracks"` in `GetFrameValues` — returns per-instance binary presence arrays using `label + "#" + index` as key
+- [ ] JS: new `InstanceTrackChart` component — binary (present/absent) rows per tracked object, colored by label class
+- [ ] JS: add `type: "tracks"` chart option in dropdown for fields with `has_tracks: true`
+- [ ] Works for quickstart-video (`index` populated); gracefully unavailable for NuScenes (`index` is None)
+
 ## Backlog
 
 - [ ] Rename local folder from `video-detection-chart-plugin` to `temporal-detection-plugin` (run `mv ~/github/video-detection-chart-plugin ~/github/temporal-detection-plugin`)

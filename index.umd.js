@@ -74,6 +74,32 @@
     return field + ":" + (type || "count");
   }
 
+  // Format frame number as timestamp (M:SS.s or H:MM:SS.s)
+  function formatTimestamp(frame, fps) {
+    if (!fps || fps <= 0) return String(frame);
+    var seconds = (frame - 1) / fps;
+    var h = Math.floor(seconds / 3600);
+    var m = Math.floor((seconds % 3600) / 60);
+    var s = seconds % 60;
+    if (h > 0) {
+      return h + ":" + (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s.toFixed(1);
+    }
+    return m + ":" + (s < 10 ? "0" : "") + s.toFixed(1);
+  }
+
+  // Format for tick labels (less precision)
+  function formatTimestampTick(frame, fps) {
+    if (!fps || fps <= 0) return String(frame);
+    var seconds = (frame - 1) / fps;
+    var h = Math.floor(seconds / 3600);
+    var m = Math.floor((seconds % 3600) / 60);
+    var s = Math.floor(seconds % 60);
+    if (h > 0) {
+      return h + ":" + (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s;
+    }
+    return m + ":" + (s < 10 ? "0" : "") + s;
+  }
+
   // ==========================================================
   // Hook: useVideoState
   // Reads video playback state from the modal looker.
@@ -306,6 +332,8 @@
     var onFrameSeek = props.onFrameSeek;
     var width = props.width;
     var yAxisTitle = props.yAxisTitle || "Detection Count";
+    var useFrameNumber = props.useFrameNumber !== false;
+    var fps = props.fps || 30;
 
     var plotWidth = width - MARGIN.left - MARGIN.right;
     var plotHeight = CHART_HEIGHT - MARGIN.top - MARGIN.bottom;
@@ -440,7 +468,7 @@
             textAnchor: "middle",
             fontFamily: "monospace",
           },
-          xv,
+          useFrameNumber ? xv : formatTimestampTick(xv, fps),
         ),
       );
       // Small tick mark
@@ -554,7 +582,7 @@
             textAnchor: "middle",
             fontFamily: "monospace",
           },
-          "Frame " + currentFrame,
+          useFrameNumber ? "Frame " + currentFrame : formatTimestamp(currentFrame, fps),
         ),
       );
 
@@ -628,7 +656,7 @@
           textAnchor: "middle",
           fontFamily: "sans-serif",
         },
-        "Frame Number",
+        useFrameNumber ? "Frame Number" : "Time",
       ),
     );
 
@@ -670,6 +698,8 @@
     var totalFrames = props.totalFrames;
     var onFrameSeek = props.onFrameSeek;
     var width = props.width;
+    var useFrameNumber = props.useFrameNumber !== false;
+    var fps = props.fps || 30;
 
     var _expanded = useState(false);
     var expanded = _expanded[0];
@@ -678,6 +708,11 @@
     var _hoverInfo = useState(null);
     var hoverInfo = _hoverInfo[0];
     var setHoverInfo = _hoverInfo[1];
+
+    // Label filter: null = show all, array = selected labels
+    var _labelFilter = useState(null);
+    var labelFilter = _labelFilter[0];
+    var setLabelFilter = _labelFilter[1];
 
     var svgRef = useRef(null);
     var wrapRef = useRef(null);
@@ -698,8 +733,38 @@
       );
     }
 
-    var visibleLabels = expanded ? labels : labels.slice(0, LT_DEFAULT_MAX_LABELS);
-    var hiddenCount = labels.length - LT_DEFAULT_MAX_LABELS;
+    // Label click handler: click = solo, Cmd/Ctrl+click = toggle
+    var handleLabelClick = function (label, e) {
+      if (e.metaKey || e.ctrlKey) {
+        // Toggle: add/remove from current selection
+        setLabelFilter(function (prev) {
+          if (!prev) {
+            // Currently showing all → show all except this one
+            return labels.filter(function (l) { return l !== label; });
+          }
+          var idx = prev.indexOf(label);
+          if (idx >= 0) {
+            var next = prev.filter(function (l) { return l !== label; });
+            return next.length === 0 ? null : next;
+          }
+          return prev.concat([label]);
+        });
+      } else {
+        // Solo: show only this label (or reset if already soloed)
+        setLabelFilter(function (prev) {
+          if (prev && prev.length === 1 && prev[0] === label) {
+            return null;
+          }
+          return [label];
+        });
+      }
+    };
+
+    var filteredLabels = labelFilter
+      ? labels.filter(function (l) { return labelFilter.indexOf(l) >= 0; })
+      : labels;
+    var visibleLabels = expanded ? filteredLabels : filteredLabels.slice(0, LT_DEFAULT_MAX_LABELS);
+    var hiddenCount = filteredLabels.length - LT_DEFAULT_MAX_LABELS;
     var showExpander = !expanded && hiddenCount > 0;
 
     var plotWidth = width - LT_MARGIN.left - LT_MARGIN.right;
@@ -810,10 +875,17 @@
 
       var frameStart = binIdx * binSize + 1;
       var frameEnd = Math.min((binIdx + 1) * binSize, totalFrames);
-      var frameLabel =
-        binSize > 1
+      var hoverFrame = frameFromMouseX(e.clientX, svgRef.current);
+      var frameLabel;
+      if (useFrameNumber) {
+        frameLabel = binSize > 1
           ? "Frames " + frameStart + "\u2013" + frameEnd
-          : "Frame " + frameFromMouseX(e.clientX, svgRef.current);
+          : "Frame " + hoverFrame;
+      } else {
+        frameLabel = binSize > 1
+          ? formatTimestampTick(frameStart, fps) + "\u2013" + formatTimestampTick(frameEnd, fps)
+          : formatTimestamp(hoverFrame, fps);
+      }
 
       setHoverInfo({
         x: e.clientX,
@@ -864,7 +936,7 @@
         );
       }
 
-      // Color swatch
+      // Color swatch (clickable)
       children.push(
         h("rect", {
           key: "sw-" + ri,
@@ -874,10 +946,12 @@
           height: 8,
           fill: color,
           rx: 1,
+          cursor: "pointer",
+          onClick: function (e) { handleLabelClick(lbl, e); },
         }),
       );
 
-      // Label name (truncated with SVG title tooltip)
+      // Label name (clickable, truncated with SVG title tooltip)
       var displayName = lbl.length > 16 ? lbl.substring(0, 15) + "\u2026" : lbl;
       children.push(
         h(
@@ -890,9 +964,32 @@
             fontSize: 11,
             textAnchor: "end",
             fontFamily: "monospace",
+            cursor: "pointer",
+            onClick: function (e) { handleLabelClick(lbl, e); },
           },
           lbl.length > 16 ? h("title", null, lbl) : null,
           displayName,
+        ),
+      );
+    }
+
+    // Filter status indicator (top-right, above heatmap)
+    if (labelFilter) {
+      children.push(
+        h(
+          "text",
+          {
+            key: "filter-status",
+            x: width - LT_MARGIN.right,
+            y: LT_MARGIN.top - 12,
+            fill: "#4FC3F7",
+            fontSize: 11,
+            textAnchor: "end",
+            fontFamily: "sans-serif",
+            cursor: "pointer",
+            onClick: function () { setLabelFilter(null); },
+          },
+          labelFilter.length + "/" + labels.length + " labels \u2022 Show all",
         ),
       );
     }
@@ -925,7 +1022,7 @@
             textAnchor: "middle",
             fontFamily: "monospace",
           },
-          "Frame " + currentFrame,
+          useFrameNumber ? "Frame " + currentFrame : formatTimestamp(currentFrame, fps),
         ),
       );
     }
@@ -949,7 +1046,7 @@
             textAnchor: "middle",
             fontFamily: "monospace",
           },
-          xTicks[xi],
+          useFrameNumber ? xTicks[xi] : formatTimestampTick(xTicks[xi], fps),
         ),
       );
     }
@@ -1108,6 +1205,8 @@
     var totalFrames = props.totalFrames;
     var onFrameSeek = props.onFrameSeek;
     var width = props.width;
+    var useFrameNumber = props.useFrameNumber !== false;
+    var fps = props.fps || 30;
 
     var placeholderHeight = chartType === "labels" ? 200 : CHART_HEIGHT;
 
@@ -1162,6 +1261,8 @@
         totalFrames: totalFrames,
         onFrameSeek: onFrameSeek,
         width: width,
+        useFrameNumber: useFrameNumber,
+        fps: fps,
       });
     } else if (data && data.frames && data.frames.length > 0) {
       body = h(SVGChart, {
@@ -1172,6 +1273,8 @@
         onFrameSeek: onFrameSeek,
         width: width,
         yAxisTitle: label,
+        useFrameNumber: useFrameNumber,
+        fps: fps,
       });
     } else {
       body = h(
@@ -1328,6 +1431,16 @@
     var setModalSample = useSetRecoilState(fos.modalSelector);
 
     // --- Video state ---
+    // Read "Use frame number" app config setting
+    var useFrameNumberSetting = true;
+    try {
+      useFrameNumberSetting = useRecoilValue(
+        fos.appConfigOption({ modal: true, key: "useFrameNumber" }),
+      );
+    } catch (e) {
+      // Fallback: default to frame numbers if atom not available
+    }
+
     var videoState = useVideoState();
     var frameNumber = videoState.frameNumber;
     var playing = videoState.playing;
@@ -1982,6 +2095,8 @@
                 totalFrames: chartTotalFrames,
                 onFrameSeek: handleFrameSeek,
                 width: containerWidth,
+                useFrameNumber: useFrameNumberSetting,
+                fps: fpsForSeek,
               });
             }),
       ),
@@ -2003,7 +2118,9 @@
         h(
           Typography,
           { variant: "body2", sx: { color: "#8F8D8B", fontFamily: "monospace" } },
-          "Frame " + effectiveFrame + " / " + (statusTotalFrames || "?"),
+          useFrameNumberSetting
+            ? "Frame " + effectiveFrame + " / " + (statusTotalFrames || "?")
+            : formatTimestamp(effectiveFrame, fpsForSeek) + " / " + formatTimestamp(statusTotalFrames || 1, fpsForSeek),
         ),
         h(
           Typography,
