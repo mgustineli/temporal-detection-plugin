@@ -760,10 +760,11 @@
     var visibleLabels = expanded ? filteredLabels : filteredLabels.slice(0, LT_DEFAULT_MAX_LABELS);
     var hiddenCount = filteredLabels.length - LT_DEFAULT_MAX_LABELS;
     var showExpander = !expanded && hiddenCount > 0;
+    var showCollapser = expanded && filteredLabels.length > LT_DEFAULT_MAX_LABELS;
 
     var plotWidth = width - LT_MARGIN.left - LT_MARGIN.right;
     var heatmapHeight = visibleLabels.length * (LT_ROW_HEIGHT + LT_ROW_GAP);
-    var expanderHeight = showExpander ? 24 : 0;
+    var expanderHeight = (showExpander || showCollapser) ? 24 : 0;
     var chartHeight = LT_MARGIN.top + heatmapHeight + expanderHeight + LT_MARGIN.bottom;
 
     if (plotWidth <= 0) return null;
@@ -1020,7 +1021,7 @@
       );
     }
 
-    // "Show N more…" expander
+    // "Show N more…" expander / "Show less" collapser
     if (showExpander) {
       children.push(
         h(
@@ -1039,6 +1040,26 @@
             },
           },
           "Show " + hiddenCount + " more\u2026 \u25BC",
+        ),
+      );
+    } else if (showCollapser) {
+      children.push(
+        h(
+          "text",
+          {
+            key: "collapser",
+            x: width / 2,
+            y: LT_MARGIN.top + heatmapHeight + 18,
+            fill: "#4FC3F7",
+            fontSize: 12,
+            textAnchor: "middle",
+            fontFamily: "sans-serif",
+            cursor: "pointer",
+            onClick: function () {
+              setExpanded(false);
+            },
+          },
+          "Show less \u25B2",
         ),
       );
     }
