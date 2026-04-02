@@ -21,6 +21,19 @@ from fiftyone import ViewField as F
 LOG_PREFIX = "[TemporalDetection]"
 
 
+def _has_non_none(nested):
+    """Check if any non-None value exists in a (possibly nested) list."""
+    for item in nested:
+        if item is None:
+            continue
+        if isinstance(item, (list, tuple)):
+            if _has_non_none(item):
+                return True
+        else:
+            return True
+    return False
+
+
 def _is_dynamic_groups(ctx):
     """Check if the current view is a dynamically grouped dataset."""
     return getattr(ctx.view, "_is_dynamic_groups", False)
@@ -52,16 +65,33 @@ def _get_fields(ctx):
         field = schema[path]
         if isinstance(field, fo.ListField):
             has_labels = (path + ".label") in full_schema
+            has_tracks = False
+            if (path + ".index") in full_schema:
+                try:
+                    if _is_dynamic_groups(ctx):
+                        test = ctx.view[:1].values(path + ".index")
+                    else:
+                        test = ctx.view[:1].values("frames[]." + path + ".index")
+                    has_tracks = _has_non_none(test)
+                except Exception:
+                    pass
             fields.append({
                 "path": path,
                 "type": "list",
                 "label": f"{path} (count)",
                 "has_labels": has_labels,
+                "has_tracks": has_tracks,
             })
         elif isinstance(field, fo.FloatField):
-            fields.append({"path": path, "type": "float", "label": path, "has_labels": False})
+            fields.append({
+                "path": path, "type": "float", "label": path,
+                "has_labels": False, "has_tracks": False,
+            })
         elif isinstance(field, fo.IntField):
-            fields.append({"path": path, "type": "int", "label": path, "has_labels": False})
+            fields.append({
+                "path": path, "type": "int", "label": path,
+                "has_labels": False, "has_tracks": False,
+            })
 
     return fields
 
@@ -187,6 +217,80 @@ def _get_label_timeline(ctx, sample_id, field_path):
     }
 
 
+def _get_instance_tracks(ctx, sample_id, field_path):
+    """Fetch per-instance binary presence tracks for tracked objects."""
+    index_expr = field_path + ".index"
+    label_expr = field_path + ".label"
+
+    if _is_dynamic_groups(ctx):
+        group_key = _get_dynamic_group_key(ctx, sample_id)
+        group = ctx.view.get_dynamic_group(group_key)
+
+        index_lists = group.values(F(index_expr))
+        label_lists = group.values(F(label_expr))
+        frame_numbers = list(range(1, len(index_lists) + 1))
+        fps = 30
+        total_frames = len(frame_numbers)
+        sample_ids = [str(s) for s in group.values("id")]
+    else:
+        sample = ctx.dataset[sample_id]
+        fps = sample.metadata.frame_rate if sample.metadata else 30
+        total_frames = sample.metadata.total_frame_count if sample.metadata else 0
+
+        view = fov.make_optimized_select_view(ctx.view, [sample_id])
+        frame_numbers, index_lists, label_lists = view.values(
+            [
+                "frames[].frame_number",
+                "frames[]." + index_expr,
+                "frames[]." + label_expr,
+            ]
+        )
+        sample_ids = None
+
+    # Build per-instance tracks: (label, index) → set of frame indices
+    instance_info = {}
+    for fi, (frame_indices, frame_labels) in enumerate(
+        zip(index_lists, label_lists)
+    ):
+        if not frame_indices or not frame_labels:
+            continue
+        for idx, label in zip(frame_indices, frame_labels):
+            if idx is None or label is None:
+                continue
+            key = (label, idx)
+            if key not in instance_info:
+                instance_info[key] = {"label": label, "index": idx, "frames": set()}
+            instance_info[key]["frames"].add(fi)
+
+    # Sort by label then index
+    sorted_keys = sorted(instance_info.keys())
+
+    # Build response arrays
+    track_names = []
+    tracks = {}
+    track_labels = {}
+    for key in sorted_keys:
+        info = instance_info[key]
+        name = f"{info['label']} #{info['index']}"
+        track_names.append(name)
+        tracks[name] = [
+            1 if fi in info["frames"] else 0
+            for fi in range(len(frame_numbers))
+        ]
+        track_labels[name] = info["label"]
+
+    return {
+        "frames": frame_numbers,
+        "track_names": track_names,
+        "tracks": tracks,
+        "track_labels": track_labels,
+        "fps": fps,
+        "total_frames": total_frames,
+        "field": field_path,
+        "sample_ids": sample_ids,
+    }
+
+
 class GetTemporalFields(foo.Operator):
     """Discovers plottable frame-level fields for the current dataset."""
 
@@ -243,6 +347,13 @@ class GetFrameValues(foo.Operator):
                 print(
                     f"{LOG_PREFIX} Loaded label timeline for '{field_path}'"
                     f" ({len(result['labels'])} labels,"
+                    f" {len(result['frames'])} frames)"
+                )
+            elif mode == "tracks":
+                result = _get_instance_tracks(ctx, sample_id, field_path)
+                print(
+                    f"{LOG_PREFIX} Loaded instance tracks for '{field_path}'"
+                    f" ({len(result['track_names'])} tracks,"
                     f" {len(result['frames'])} frames)"
                 )
             else:

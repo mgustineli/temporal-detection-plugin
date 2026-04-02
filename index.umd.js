@@ -692,6 +692,7 @@
     var frames = props.frames;
     var labels = props.labels;
     var timeline = props.timeline;
+    var colorKeyMap = props.colorKeyMap || null; // maps label → color key (for instance tracks)
     var currentFrame = props.currentFrame;
     var totalFrames = props.totalFrames;
     var onFrameSeek = props.onFrameSeek;
@@ -858,7 +859,7 @@
       for (var ti = 0; ti < visibleLabels.length; ti++) {
         var hl = visibleLabels[ti];
         var val = displayTimeline[hl] ? (displayTimeline[hl][binIdx] || 0) : 0;
-        if (val > 0) entries.push({ label: hl, count: val, color: labelColor(hl) });
+        if (val > 0) entries.push({ label: hl, count: val, color: labelColor(colorKeyMap ? colorKeyMap[hl] || hl : hl) });
       }
 
       if (entries.length === 0) {
@@ -909,7 +910,7 @@
     // Heatmap cells
     for (var ri = 0; ri < visibleLabels.length; ri++) {
       var lbl = visibleLabels[ri];
-      var color = labelColor(lbl);
+      var color = labelColor(colorKeyMap ? colorKeyMap[lbl] || lbl : lbl);
       var rowY = LT_MARGIN.top + ri * (LT_ROW_HEIGHT + LT_ROW_GAP);
       var vals = displayTimeline[lbl] || [];
 
@@ -1250,14 +1251,14 @@
                 type: "checkbox",
                 checked: isChecked,
                 onChange: function () { handleFilterToggle(lbl); },
-                style: { accentColor: labelColor(lbl), cursor: "pointer" },
+                style: { accentColor: labelColor(colorKeyMap ? colorKeyMap[lbl] || lbl : lbl), cursor: "pointer" },
               }),
               h("span", {
                 style: {
                   display: "inline-block",
                   width: "8px",
                   height: "8px",
-                  backgroundColor: labelColor(lbl),
+                  backgroundColor: labelColor(colorKeyMap ? colorKeyMap[lbl] || lbl : lbl),
                   borderRadius: "1px",
                   flexShrink: 0,
                   opacity: isChecked ? 1 : 0.3,
@@ -1370,6 +1371,19 @@
           "Error: " + error,
         ),
       );
+    } else if (chartType === "tracks" && data && data.tracks) {
+      body = h(LabelTimelineChart, {
+        frames: data.frames,
+        labels: data.track_names,
+        timeline: data.tracks,
+        colorKeyMap: data.track_labels,
+        currentFrame: currentFrame,
+        totalFrames: totalFrames,
+        onFrameSeek: onFrameSeek,
+        width: width,
+        useFrameNumber: useFrameNumber,
+        fps: fps,
+      });
     } else if (chartType === "labels" && data && data.timeline) {
       body = h(LabelTimelineChart, {
         frames: data.frames,
@@ -1792,6 +1806,18 @@
             next[key] = { loading: false, error: payload.error };
             return next;
           });
+        } else if (payload.tracks) {
+          // Instance track data
+          dataStoreRef.current[key] = {
+            frames: payload.frames,
+            track_names: payload.track_names,
+            tracks: payload.tracks,
+            track_labels: payload.track_labels,
+            fps: payload.fps,
+            total_frames: payload.total_frames,
+          };
+          stashOk = true;
+          console.log(LOG_PREFIX, "Loaded", payload.track_names.length, "instance tracks for", key);
         } else if (payload.timeline) {
           // Label timeline data
           dataStoreRef.current[key] = {
@@ -2080,10 +2106,16 @@
         if (!usedKeys[chartKey(af.path, "labels")]) {
           addOptions.push({ value: af.path + ":labels", label: af.path + " (labels)" });
         }
+        if (af.has_tracks && !usedKeys[chartKey(af.path, "tracks")]) {
+          addOptions.push({ value: af.path + ":tracks", label: af.path + " (tracks)" });
+        }
         if (!usedKeys[chartKey(af.path, "count")]) {
           addOptions.push({ value: af.path + ":count", label: af.label });
         }
       } else {
+        if (af.has_tracks && !usedKeys[chartKey(af.path, "tracks")]) {
+          addOptions.push({ value: af.path + ":tracks", label: af.path + " (tracks)" });
+        }
         if (!usedKeys[chartKey(af.path, "count")]) {
           addOptions.push({ value: af.path + ":count", label: af.label });
         }
@@ -2189,6 +2221,8 @@
                 if (fields[li].path === chart.field) {
                   if (chart.type === "labels") {
                     label = chart.field + " (labels)";
+                  } else if (chart.type === "tracks") {
+                    label = chart.field + " (tracks)";
                   } else {
                     label = fields[li].label;
                   }
