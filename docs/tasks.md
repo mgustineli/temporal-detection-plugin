@@ -1,6 +1,6 @@
 # Temporal Detection Plugin — Tasks
 
-**Status:** Complete — multi-chart panel with label timeline heatmap, add/remove/reorder, per-dataset persistence, all dynamic group view modes with full bidirectional sync
+**Status:** Active — multi-chart panel with label timeline heatmap, instance track chart, label filtering, timestamp display, bidirectional sync across all modes
 
 ## Completed
 
@@ -48,7 +48,7 @@
 
 ### Bidirectional Sync for All Dynamic Group View Modes
 
-- [x] Fix chart→video seek in "video" mode (ImaVid) — `drawFrameNoAnimation` directly on `ImaVidElement` via `lookerElement.children[0]`, matching FiftyOne's own `renderFrame` pattern
+- [x] Fix chart→video seek in "video" mode (ImaVid) — uses timeline `CustomEvent` (`set-frame-number-timeline-{id}`), same mechanism as FiftyOne's built-in seek bar and `set_frame_number` operator
 - [x] Fix chart→image seek in "pagination" mode — uses `setDynamicGroupIndex` via `fos.dynamicGroupCurrentElementIndex`
 - [x] Fix chart→image seek in "carousel" mode — maps frame→sampleId, navigates via `fos.modalSelector`
 - [x] Fix carousel→chart sync — watches `modalSampleId` changes, resolves to frame via `sampleIdToFrame` mapping
@@ -82,7 +82,7 @@
 - [x] Frame binning when `plotWidth / totalFrames < 2px` — max count per bin
 - [x] Click/drag seeking adapted from SVGChart pattern
 - [x] Hover tooltip with portal rendering (`ReactDOM.createPortal`) — overlays other charts
-- [x] Top-N filtering (15 labels) with "Show N more…" expander
+- [x] Top-N filtering (15 labels) with "Show N more…" expander and "Show less ▲" collapser
 - [x] `ChartCard` dispatches between `LabelTimelineChart` and `SVGChart` based on `chartType` prop
 - [x] Add chart dropdown shows dual entries (labels/count) for label-capable fields
 - [x] Default chart prefers `type: "labels"` for first label-capable field
@@ -95,49 +95,82 @@
 - [x] Panel name: `Detection Count Plot (Interactive)` → `Temporal Data Explorer`
 - [x] Updated operator paths, localStorage prefix, log prefixes, README, and gif
 
-## In Progress
-
 ### Label Filtering in Heatmap
 
-- [x] Clickable label names to solo/toggle visibility (click = solo, Cmd/Ctrl+click = toggle)
-- [x] Filter status indicator with "Show all" reset link
+- [x] Checkbox dropdown with "Filter labels" button — portal-rendered to overlay other charts
+- [x] Each label has checkbox + color swatch + full name
+- [x] "Select all" / "Clear all" quick actions at top of dropdown
+- [x] "Show all" button appears when filtering is active
+- [x] Button highlights blue with count when filter is active (e.g., "Filter labels (3/10)")
 - [x] Filtered state is component-local (not persisted)
 
 ### Timestamp Display (Frame Number vs Time)
 
 - [x] Read FiftyOne's "Use frame number" setting via `fos.appConfigOption({modal: true, key: "useFrameNumber"})`
-- [x] Format X-axis ticks as `M:SS` timestamps when setting is off (`(frame - 1) / fps`)
-- [x] Update frame indicator label and tooltip in both `SVGChart` and `LabelTimelineChart`
-- [x] Update status bar to show timestamps when setting is off
+- [x] `formatTimestamp()` and `formatTimestampTick()` helpers — `M:SS.s` / `H:MM:SS.s`
+- [x] X-axis ticks, frame indicator, tooltip, and status bar all respect the setting
+- [x] Both `SVGChart` and `LabelTimelineChart` updated
 
 ### Instance Track Chart (Per-Object Binary Timeline)
 
-- [ ] Python: detect if `index` attribute is populated → `has_tracks: true/false` in field discovery
-- [ ] Python: new `mode="tracks"` in `GetFrameValues` — returns per-instance binary presence arrays using `label + "#" + index` as key
-- [ ] JS: new `InstanceTrackChart` component — binary (present/absent) rows per tracked object, colored by label class
-- [ ] JS: add `type: "tracks"` chart option in dropdown for fields with `has_tracks: true`
-- [ ] Works for quickstart-video (`index` populated); gracefully unavailable for NuScenes (`index` is None)
+- [x] Python: `has_tracks` flag in field discovery — checks schema for `.index` and verifies non-None values in first sample
+- [x] Python: `_get_instance_tracks()` helper — builds per-instance binary presence arrays keyed by `"label #index"`, sorted by label then index
+- [x] Python: `mode="tracks"` dispatch in `GetFrameValues.execute()`
+- [x] JS: `colorKeyMap` prop on `LabelTimelineChart` — maps instance names to class names for consistent colors
+- [x] JS: data result handler detects `payload.tracks` for instance track data
+- [x] JS: dropdown shows `"field (tracks)"` for fields with `has_tracks: true`
+- [x] JS: `ChartCard` dispatches tracks data to `LabelTimelineChart` with `colorKeyMap`
+- [x] Works for quickstart-video (`index` populated, 10 tracked objects)
+- [x] Gracefully unavailable for NuScenes (`index` is None — no tracking attribute)
+
+### ImaVid Seek Fix
+
+- [x] Discovered ImaVid two-layer architecture: legacy canvas layer + React/Jotai timeline layer
+- [x] `drawFrameNoAnimation` only updates canvas, not timeline atoms (playback resume point)
+- [x] Fixed: now dispatches `CustomEvent("set-frame-number-timeline-{id}")` — same mechanism as FiftyOne's seek bar
+- [x] Properly updates canvas, Jotai frame number atom, status indicator ("30/38"), and resume point
+
+## In Progress
+
+(nothing currently)
 
 ## Backlog
+
+### Instance Tracking — Extended Attribute Support
+
+- [ ] Support `instance_token` as alternative tracking attribute (NuScenes uses this in the original dataset but it wasn't imported into this FiftyOne dataset)
+- [ ] Auto-detect tracking attributes: check `index`, `instance_id`, `track_id`, `instance_token` in schema
+- [ ] Allow user to specify custom tracking attribute via dropdown
+- [ ] Re-import NuScenes with `instance_token` mapped to test
+
+### Housekeeping
 
 - [ ] Rename local folder from `video-detection-chart-plugin` to `temporal-detection-plugin` (run `mv ~/github/video-detection-chart-plugin ~/github/temporal-detection-plugin`)
 - [ ] Send Python-only panel example to Porsche with interactivity trade-off explanation
 - [ ] Split Python panel into its own repo — it's a reference example, not part of the production JS plugin
+
+### Future Enhancements
+
 - [ ] Migrate JS dropdown from native `<select>` to VOODO `Select` component (requires build step)
 - [ ] Explore support for non-frame-level temporal data (higher-frequency sensor data — Eric's scope)
 - [ ] Investigate image loading latency for dynamic group frame navigation (GCS fetch per frame)
+- [ ] Server-side frame binning for very long videos (10k+ frames) to reduce payload size
+- [ ] Canvas rendering instead of SVG for heatmap charts with many elements (performance)
 
 ## Key Files
 
-- `index.umd.js` — JS panel: multi-chart SVG system with label timeline heatmap, line charts, bidirectional video sync, localStorage persistence
-- `__init__.py` — Python operators (field discovery with `has_labels`, count/label timeline data) + `FrameDataPlot` panel (disabled, reference example only)
+- `index.umd.js` — JS panel: multi-chart SVG system with label timeline heatmap, instance tracks, line charts, label filtering, timestamp display, bidirectional video sync, localStorage persistence
+- `__init__.py` — Python operators: field discovery (`has_labels`, `has_tracks`), count/label timeline/instance track data, both native video and dynamic groups
 - `fiftyone.yml` — Plugin manifest (1 panel, 3 operators)
 
 ## Architecture Notes
 
 - This plugin targets **native video datasets** AND **dynamically grouped image datasets**
 - Dynamic groups have three navigation modes: pagination (images), carousel (filmstrip), video (ImaVid playback)
+- ImaVid seek uses timeline `CustomEvent` dispatch (same as FiftyOne's built-in `set_frame_number` operator)
 - The Python panel (`FrameDataPlot`) is a reference example — should be split into a separate repo
 - The JS panel is the production version with full bidirectional sync
 - Key Recoil atoms for dynamic groups: `isDynamicGroup`, `dynamicGroupCurrentElementIndex`, `dynamicGroupsViewMode`, `shouldRenderImaVidLooker`, `imaVidLookerState`
+- Key app config: `fos.appConfigOption({modal: true, key: "useFrameNumber"})` for timestamp display
+- Instance tracks require a persistent cross-frame identifier (`index` for video datasets, `instance_token` for NuScenes)
 - Reference: [FiftyOne dynamic grouping docs](https://docs.voxel51.com/user_guide/app.html#grouping-samples)
