@@ -714,6 +714,11 @@
     var labelFilter = _labelFilter[0];
     var setLabelFilter = _labelFilter[1];
 
+    // Filter dropdown open state
+    var _filterOpen = useState(false);
+    var filterOpen = _filterOpen[0];
+    var setFilterOpen = _filterOpen[1];
+
     var svgRef = useRef(null);
     var wrapRef = useRef(null);
 
@@ -733,31 +738,20 @@
       );
     }
 
-    // Label click handler: click = solo, Cmd/Ctrl+click = toggle
-    var handleLabelClick = function (label, e) {
-      if (e.metaKey || e.ctrlKey) {
-        // Toggle: add/remove from current selection
-        setLabelFilter(function (prev) {
-          if (!prev) {
-            // Currently showing all → show all except this one
-            return labels.filter(function (l) { return l !== label; });
-          }
-          var idx = prev.indexOf(label);
-          if (idx >= 0) {
-            var next = prev.filter(function (l) { return l !== label; });
-            return next.length === 0 ? null : next;
-          }
-          return prev.concat([label]);
-        });
-      } else {
-        // Solo: show only this label (or reset if already soloed)
-        setLabelFilter(function (prev) {
-          if (prev && prev.length === 1 && prev[0] === label) {
-            return null;
-          }
-          return [label];
-        });
-      }
+    // Toggle a label in the filter
+    var handleFilterToggle = function (label) {
+      setLabelFilter(function (prev) {
+        if (!prev) {
+          // Currently showing all → show all except this one
+          return labels.filter(function (l) { return l !== label; });
+        }
+        var idx = prev.indexOf(label);
+        if (idx >= 0) {
+          var next = prev.filter(function (l) { return l !== label; });
+          return next.length === 0 || next.length === labels.length ? null : next;
+        }
+        return prev.concat([label]);
+      });
     };
 
     var filteredLabels = labelFilter
@@ -936,7 +930,7 @@
         );
       }
 
-      // Color swatch (clickable)
+      // Color swatch
       children.push(
         h("rect", {
           key: "sw-" + ri,
@@ -946,12 +940,10 @@
           height: 8,
           fill: color,
           rx: 1,
-          cursor: "pointer",
-          onClick: function (e) { handleLabelClick(lbl, e); },
         }),
       );
 
-      // Label name (clickable, truncated with SVG title tooltip)
+      // Label name (truncated with SVG title tooltip)
       var displayName = lbl.length > 16 ? lbl.substring(0, 15) + "\u2026" : lbl;
       children.push(
         h(
@@ -964,32 +956,9 @@
             fontSize: 11,
             textAnchor: "end",
             fontFamily: "monospace",
-            cursor: "pointer",
-            onClick: function (e) { handleLabelClick(lbl, e); },
           },
           lbl.length > 16 ? h("title", null, lbl) : null,
           displayName,
-        ),
-      );
-    }
-
-    // Filter status indicator (top-right, above heatmap)
-    if (labelFilter) {
-      children.push(
-        h(
-          "text",
-          {
-            key: "filter-status",
-            x: width - LT_MARGIN.right,
-            y: LT_MARGIN.top - 12,
-            fill: "#4FC3F7",
-            fontSize: 11,
-            textAnchor: "end",
-            fontFamily: "sans-serif",
-            cursor: "pointer",
-            onClick: function () { setLabelFilter(null); },
-          },
-          labelFilter.length + "/" + labels.length + " labels \u2022 Show all",
         ),
       );
     }
@@ -1155,9 +1124,152 @@
       tooltip = window.ReactDOM.createPortal(tipEl, document.body);
     }
 
+    // Filter bar
+    var filterBar = h(
+      "div",
+      {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          padding: "4px 8px",
+          backgroundColor: "#111213",
+          borderBottom: "1px solid #2A2A2A",
+          position: "relative",
+        },
+      },
+      h(
+        "button",
+        {
+          onClick: function () { setFilterOpen(function (v) { return !v; }); },
+          style: {
+            background: labelFilter ? "#1A2A3A" : "none",
+            border: labelFilter ? "1px solid #4FC3F7" : "1px solid #404040",
+            color: labelFilter ? "#4FC3F7" : "#8F8D8B",
+            cursor: "pointer",
+            padding: "2px 8px",
+            fontSize: "11px",
+            borderRadius: "3px",
+            fontFamily: "sans-serif",
+          },
+        },
+        "\u25BC Filter labels" + (labelFilter ? " (" + labelFilter.length + "/" + labels.length + ")" : ""),
+      ),
+      labelFilter
+        ? h(
+            "button",
+            {
+              onClick: function () { setLabelFilter(null); },
+              style: {
+                background: "none",
+                border: "none",
+                color: "#4FC3F7",
+                cursor: "pointer",
+                padding: "2px 6px",
+                fontSize: "11px",
+                fontFamily: "sans-serif",
+              },
+            },
+            "Show all",
+          )
+        : null,
+      // Dropdown panel
+      filterOpen
+        ? h(
+            "div",
+            {
+              style: {
+                position: "absolute",
+                top: "100%",
+                left: "8px",
+                zIndex: 100,
+                backgroundColor: "#1E1F20",
+                border: "1px solid #404040",
+                borderRadius: "4px",
+                padding: "6px 0",
+                maxHeight: "250px",
+                overflowY: "auto",
+                minWidth: "220px",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+              },
+            },
+            // Select all / Clear all
+            h(
+              "div",
+              {
+                style: {
+                  display: "flex",
+                  gap: "12px",
+                  padding: "2px 12px 6px",
+                  borderBottom: "1px solid #333",
+                  marginBottom: "4px",
+                },
+              },
+              h(
+                "span",
+                {
+                  onClick: function () { setLabelFilter(null); },
+                  style: { color: "#4FC3F7", fontSize: "11px", cursor: "pointer", fontFamily: "sans-serif" },
+                },
+                "Select all",
+              ),
+              h(
+                "span",
+                {
+                  onClick: function () { setLabelFilter([]); },
+                  style: { color: "#4FC3F7", fontSize: "11px", cursor: "pointer", fontFamily: "sans-serif" },
+                },
+                "Clear all",
+              ),
+            ),
+            // Label checkboxes
+            labels.map(function (lbl) {
+              var isChecked = !labelFilter || labelFilter.indexOf(lbl) >= 0;
+              return h(
+                "label",
+                {
+                  key: lbl,
+                  style: {
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "3px 12px",
+                    cursor: "pointer",
+                    fontSize: "11px",
+                    fontFamily: "monospace",
+                    color: isChecked ? "#C1BFBD" : "#666",
+                  },
+                  onMouseEnter: function (e) { e.currentTarget.style.backgroundColor = "#2A2A2A"; },
+                  onMouseLeave: function (e) { e.currentTarget.style.backgroundColor = "transparent"; },
+                },
+                h("input", {
+                  type: "checkbox",
+                  checked: isChecked,
+                  onChange: function () { handleFilterToggle(lbl); },
+                  style: { accentColor: labelColor(lbl), cursor: "pointer" },
+                }),
+                h("span", {
+                  style: {
+                    display: "inline-block",
+                    width: "8px",
+                    height: "8px",
+                    backgroundColor: labelColor(lbl),
+                    borderRadius: "1px",
+                    flexShrink: 0,
+                    opacity: isChecked ? 1 : 0.3,
+                  },
+                }),
+                lbl,
+              );
+            }),
+          )
+        : null,
+    );
+
     return h(
       "div",
       { ref: wrapRef, style: { position: "relative" } },
+      filterBar,
       h(
         "svg",
         {
