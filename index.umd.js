@@ -40,6 +40,12 @@
 
   var LOG_PREFIX = "[TemporalDataExplorer]";
 
+  // Stable selector reference for "Use frame number" app config
+  // Created once at module level so Recoil can properly subscribe to changes
+  var useFrameNumberSelector = (fos && fos.appConfigOption)
+    ? fos.appConfigOption({ modal: true, key: "useFrameNumber" })
+    : null;
+
   // --- Constants ---
   var CHART_HEIGHT = 350;
   var MARGIN = { top: 35, right: 30, bottom: 50, left: 65 };
@@ -1584,14 +1590,14 @@
     var setModalSample = useSetRecoilState(fos.modalSelector);
 
     // --- Video state ---
-    // Read "Use frame number" app config setting
+    // Read "Use frame number" app config setting (stable selector ref for reactivity)
     var useFrameNumberSetting = true;
-    try {
-      useFrameNumberSetting = useRecoilValue(
-        fos.appConfigOption({ modal: true, key: "useFrameNumber" }),
-      );
-    } catch (e) {
-      // Fallback: default to frame numbers if atom not available
+    if (useFrameNumberSelector) {
+      try {
+        useFrameNumberSetting = useRecoilValue(useFrameNumberSelector);
+      } catch (e) {
+        // Fallback: default to frame numbers if atom not available
+      }
     }
 
     var videoState = useVideoState();
