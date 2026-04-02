@@ -279,6 +279,11 @@
       el.drawFrameNoAnimation(frameNumber);
     }
 
+    // Update the looker's internal state so playback resumes from here
+    if (typeof modalLooker.updater === "function") {
+      modalLooker.updater({ currentFrameNumber: frameNumber });
+    }
+
     // Pause if playing (stay on the seeked frame)
     if (modalLooker.state && modalLooker.state.playing) {
       if (typeof modalLooker.pause === "function") {
@@ -1986,6 +1991,8 @@
           seekImaVidToFrame(frame, modalLooker);
           // Update Recoil state so playback resumes from the seeked frame
           setImaVidFrameNumber(frame);
+          // Update dynamic group index (controls timeline position)
+          setDynamicGroupIndex(frame - 1);
         } else if (isCarousel) {
           // Carousel mode: navigate via modalSelector
           var targetSampleId =
