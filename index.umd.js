@@ -775,15 +775,19 @@
 
     if (plotWidth <= 0) return null;
 
-    // Find global max count for opacity scaling
-    var globalMax = 1;
+    // Find per-label max count for opacity scaling
+    // Each label is scaled against its own peak, so every row
+    // independently shows where that label is most/least active
+    var labelMax = {};
     for (var li = 0; li < visibleLabels.length; li++) {
+      var lm = 1;
       var arr = timeline[visibleLabels[li]];
       if (arr) {
         for (var fi = 0; fi < arr.length; fi++) {
-          if (arr[fi] > globalMax) globalMax = arr[fi];
+          if (arr[fi] > lm) lm = arr[fi];
         }
       }
+      labelMax[visibleLabels[li]] = lm;
     }
 
     // Frame binning: when plotWidth / totalFrames < 2px
@@ -923,7 +927,7 @@
 
       for (var ci = 0; ci < vals.length; ci++) {
         if (vals[ci] === 0) continue;
-        var opacity = 0.2 + 0.8 * (vals[ci] / globalMax);
+        var opacity = 0.2 + 0.8 * (vals[ci] / labelMax[lbl]);
         children.push(
           h("rect", {
             key: "c-" + ri + "-" + ci,
