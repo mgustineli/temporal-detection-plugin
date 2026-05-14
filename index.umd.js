@@ -56,6 +56,22 @@
   var LT_ROW_GAP = 1;
   var LT_DEFAULT_MAX_LABELS = 15;
 
+  // --- Event chart (boolean) constants ---
+  var EVT_MARGIN = { top: 20, right: 30, bottom: 30, left: 65 };
+  var EVT_TRACK_HEIGHT = 28;
+  var EVT_TOTAL_HEIGHT = EVT_MARGIN.top + EVT_TRACK_HEIGHT + EVT_MARGIN.bottom;
+  var EVT_COLOR = "#FF6D04";
+
+  // --- Caption ribbon (string) constants ---
+  var CAP_MARGIN = { top: 20, right: 30, bottom: 30, left: 65 };
+  var CAP_RIBBON_HEIGHT = 22;
+  var CAP_TEXT_STRIP_HEIGHT = 36;
+  var CAP_TOTAL_HEIGHT =
+    CAP_MARGIN.top +
+    CAP_RIBBON_HEIGHT +
+    CAP_TEXT_STRIP_HEIGHT +
+    CAP_MARGIN.bottom;
+
   var LABEL_COLORS = [
     "#FF6D04", "#4FC3F7", "#81C784", "#FFB74D", "#BA68C8",
     "#4DD0E1", "#AED581", "#FF8A65", "#9575CD", "#FFD54F",
@@ -345,11 +361,27 @@
     if (plotWidth <= 0 || plotHeight <= 0) return null;
 
     var maxCount = 1;
+    var isIntegerData = true;
     for (var i = 0; i < counts.length; i++) {
-      if (counts[i] > maxCount) maxCount = counts[i];
+      var cv = counts[i];
+      if (cv > maxCount) maxCount = cv;
+      if (cv !== null && cv !== undefined && !Number.isInteger(cv)) {
+        isIntegerData = false;
+      }
     }
-    // Add 10% headroom
-    var yMax = Math.ceil(maxCount * 1.1);
+    // Add 10% headroom. For integer data, ceil to a clean integer so y-ticks
+    // land on round counts. For floats, keep precision so sub-1 ranges aren't
+    // collapsed (e.g. salt_and_pepper values in [0, 1]).
+    var yMax = isIntegerData
+      ? Math.max(Math.ceil(maxCount * 1.1), 1)
+      : maxCount * 1.1;
+
+    var formatChartValue = function (v) {
+      if (v === null || v === undefined) return "";
+      if (typeof v !== "number") return String(v);
+      if (Number.isInteger(v)) return String(v);
+      return v.toFixed(2);
+    };
 
     // --- Scale functions ---
     var xScale = function (frame) {
@@ -418,7 +450,8 @@
     // Y axis gridlines + labels
     var yTickCount = 5;
     for (var t = 0; t <= yTickCount; t++) {
-      var tickVal = Math.round((yMax / yTickCount) * t);
+      var rawTickVal = (yMax / yTickCount) * t;
+      var tickVal = isIntegerData ? Math.round(rawTickVal) : rawTickVal;
       var y = yScale(tickVal);
       children.push(
         h("line", {
@@ -444,7 +477,7 @@
             textAnchor: "end",
             fontFamily: "monospace",
           },
-          tickVal,
+          formatChartValue(tickVal),
         ),
       );
     }
@@ -623,7 +656,7 @@
               fontWeight: "bold",
               fontFamily: "monospace",
             },
-            String(counts[dataIdx]),
+            formatChartValue(counts[dataIdx]),
           ),
         );
       }
@@ -1323,6 +1356,455 @@
   }
 
   // ==========================================================
+  // Component: EventChart (boolean)
+  // Horizontal track showing colored segments where value is True.
+  // Pure SVG, click/drag-to-seek, vertical frame indicator.
+  // ==========================================================
+  function EventChart(props) {
+    var frames = props.frames;
+    var segments = props.segments || [];
+    var currentFrame = props.currentFrame;
+    var totalFrames = props.totalFrames;
+    var onFrameSeek = props.onFrameSeek;
+    var width = props.width;
+    var useFrameNumber = props.useFrameNumber !== false;
+    var fps = props.fps || 30;
+    var color = props.color || EVT_COLOR;
+
+    var plotWidth = width - EVT_MARGIN.left - EVT_MARGIN.right;
+    if (plotWidth <= 0) return null;
+
+    var maxFrame = Math.max(totalFrames, 1);
+
+    var xScale = function (frame) {
+      return (
+        EVT_MARGIN.left + ((frame - 1) / Math.max(maxFrame - 1, 1)) * plotWidth
+      );
+    };
+
+    var frameFromMouseX = function (clientX, svgEl) {
+      var rect = svgEl.getBoundingClientRect();
+      var x = clientX - rect.left;
+      if (x < EVT_MARGIN.left) x = EVT_MARGIN.left;
+      if (x > width - EVT_MARGIN.right) x = width - EVT_MARGIN.right;
+      var fraction = (x - EVT_MARGIN.left) / plotWidth;
+      var frame = Math.round(fraction * (maxFrame - 1)) + 1;
+      return Math.max(1, Math.min(maxFrame, frame));
+    };
+
+    var svgRef = useRef(null);
+
+    var handleMouseDown = useCallback(
+      function (e) {
+        if (!svgRef.current) return;
+        e.preventDefault();
+        var frame = frameFromMouseX(e.clientX, svgRef.current);
+        onFrameSeek(frame);
+        var svg = svgRef.current;
+        var move = function (ev) {
+          onFrameSeek(frameFromMouseX(ev.clientX, svg));
+        };
+        var up = function () {
+          document.removeEventListener("mousemove", move);
+          document.removeEventListener("mouseup", up);
+        };
+        document.addEventListener("mousemove", move);
+        document.addEventListener("mouseup", up);
+      },
+      [onFrameSeek, maxFrame, width],
+    );
+
+    var children = [];
+
+    children.push(
+      h("rect", {
+        key: "bg",
+        width: width,
+        height: EVT_TOTAL_HEIGHT,
+        fill: "#18191A",
+        rx: 6,
+      }),
+    );
+
+    // Empty/baseline track
+    children.push(
+      h("rect", {
+        key: "baseline",
+        x: EVT_MARGIN.left,
+        y: EVT_MARGIN.top,
+        width: plotWidth,
+        height: EVT_TRACK_HEIGHT,
+        fill: "#1E1F20",
+        rx: 3,
+      }),
+    );
+
+    // Segments where True
+    for (var si = 0; si < segments.length; si++) {
+      var seg = segments[si];
+      var sx = xScale(seg.start);
+      var ex = xScale(seg.end);
+      // ensure minimum 2px width for visibility
+      var segW = Math.max(ex - sx + (plotWidth / Math.max(maxFrame - 1, 1)), 2);
+      children.push(
+        h("rect", {
+          key: "seg-" + si,
+          x: sx,
+          y: EVT_MARGIN.top,
+          width: segW,
+          height: EVT_TRACK_HEIGHT,
+          fill: color,
+          opacity: 0.85,
+          rx: 2,
+        }),
+      );
+    }
+
+    // X axis tick labels
+    var xTickStep = Math.max(1, Math.floor(maxFrame / 8));
+    var xTicks = [];
+    for (var f = 1; f <= maxFrame; f += xTickStep) xTicks.push(f);
+    if (xTicks[xTicks.length - 1] !== maxFrame) xTicks.push(maxFrame);
+    for (var xi = 0; xi < xTicks.length; xi++) {
+      var xv = xTicks[xi];
+      children.push(
+        h(
+          "text",
+          {
+            key: "xl-" + xi,
+            x: xScale(xv),
+            y: EVT_MARGIN.top + EVT_TRACK_HEIGHT + 18,
+            fill: "#8F8D8B",
+            fontSize: 12,
+            textAnchor: "middle",
+            fontFamily: "monospace",
+          },
+          useFrameNumber ? xv : formatTimestampTick(xv, fps),
+        ),
+      );
+    }
+
+    // Frame indicator
+    if (currentFrame >= 1 && currentFrame <= maxFrame) {
+      var cx = xScale(currentFrame);
+      children.push(
+        h("line", {
+          key: "frameline",
+          x1: cx,
+          y1: EVT_MARGIN.top - 4,
+          x2: cx,
+          y2: EVT_MARGIN.top + EVT_TRACK_HEIGHT + 4,
+          stroke: "#86B5F6",
+          strokeWidth: 2,
+        }),
+      );
+    }
+
+    // Click overlay (transparent rect on top)
+    children.push(
+      h("rect", {
+        key: "click",
+        x: EVT_MARGIN.left,
+        y: EVT_MARGIN.top - 4,
+        width: plotWidth,
+        height: EVT_TRACK_HEIGHT + 8,
+        fill: "transparent",
+        style: { cursor: "pointer" },
+        onMouseDown: handleMouseDown,
+      }),
+    );
+
+    return h(
+      "svg",
+      {
+        ref: svgRef,
+        width: width,
+        height: EVT_TOTAL_HEIGHT,
+        style: { display: "block" },
+      },
+      children,
+    );
+  }
+
+  // ==========================================================
+  // Component: CaptionRibbon (string)
+  // Horizontal ribbon with one colored segment per unique caption
+  // run, plus a text strip below showing the caption at the
+  // current frame. Hover tooltip shows the full segment text.
+  // ==========================================================
+  function CaptionRibbon(props) {
+    var frames = props.frames;
+    var values = props.values || [];
+    var segments = props.segments || [];
+    var currentFrame = props.currentFrame;
+    var totalFrames = props.totalFrames;
+    var onFrameSeek = props.onFrameSeek;
+    var width = props.width;
+    var useFrameNumber = props.useFrameNumber !== false;
+    var fps = props.fps || 30;
+
+    var _hover = useState(null);
+    var hover = _hover[0];
+    var setHover = _hover[1];
+
+    var plotWidth = width - CAP_MARGIN.left - CAP_MARGIN.right;
+    if (plotWidth <= 0) return null;
+
+    var maxFrame = Math.max(totalFrames, 1);
+
+    var xScale = function (frame) {
+      return (
+        CAP_MARGIN.left + ((frame - 1) / Math.max(maxFrame - 1, 1)) * plotWidth
+      );
+    };
+
+    var frameFromMouseX = function (clientX, svgEl) {
+      var rect = svgEl.getBoundingClientRect();
+      var x = clientX - rect.left;
+      if (x < CAP_MARGIN.left) x = CAP_MARGIN.left;
+      if (x > width - CAP_MARGIN.right) x = width - CAP_MARGIN.right;
+      var fraction = (x - CAP_MARGIN.left) / plotWidth;
+      var frame = Math.round(fraction * (maxFrame - 1)) + 1;
+      return Math.max(1, Math.min(maxFrame, frame));
+    };
+
+    var svgRef = useRef(null);
+
+    var handleMouseDown = useCallback(
+      function (e) {
+        if (!svgRef.current) return;
+        e.preventDefault();
+        var frame = frameFromMouseX(e.clientX, svgRef.current);
+        onFrameSeek(frame);
+        var svg = svgRef.current;
+        var move = function (ev) {
+          onFrameSeek(frameFromMouseX(ev.clientX, svg));
+        };
+        var up = function () {
+          document.removeEventListener("mousemove", move);
+          document.removeEventListener("mouseup", up);
+        };
+        document.addEventListener("mousemove", move);
+        document.addEventListener("mouseup", up);
+      },
+      [onFrameSeek, maxFrame, width],
+    );
+
+    // Resolve the caption at the current frame by linear scan.
+    var currentText = "";
+    for (var ci = 0; ci < segments.length; ci++) {
+      var s = segments[ci];
+      if (currentFrame >= s.start && currentFrame <= s.end) {
+        currentText = String(s.value);
+        break;
+      }
+    }
+
+    var children = [];
+
+    children.push(
+      h("rect", {
+        key: "bg",
+        width: width,
+        height: CAP_TOTAL_HEIGHT,
+        fill: "#18191A",
+        rx: 6,
+      }),
+    );
+
+    // Empty/baseline ribbon
+    children.push(
+      h("rect", {
+        key: "baseline",
+        x: CAP_MARGIN.left,
+        y: CAP_MARGIN.top,
+        width: plotWidth,
+        height: CAP_RIBBON_HEIGHT,
+        fill: "#1E1F20",
+        rx: 3,
+      }),
+    );
+
+    // Caption segments
+    for (var sgi = 0; sgi < segments.length; sgi++) {
+      var seg = segments[sgi];
+      var sx = xScale(seg.start);
+      var ex = xScale(seg.end);
+      var segW = Math.max(ex - sx + (plotWidth / Math.max(maxFrame - 1, 1)), 2);
+      var col = labelColor(String(seg.value));
+      children.push(
+        h("rect", {
+          key: "seg-" + sgi,
+          x: sx,
+          y: CAP_MARGIN.top,
+          width: segW,
+          height: CAP_RIBBON_HEIGHT,
+          fill: col,
+          opacity: 0.85,
+          rx: 2,
+          style: { cursor: "pointer" },
+          onMouseEnter: (function (text) {
+            return function () {
+              setHover(text);
+            };
+          })(String(seg.value)),
+          onMouseLeave: function () {
+            setHover(null);
+          },
+        }),
+      );
+    }
+
+    // X axis tick labels (under ribbon)
+    var capTicksY = CAP_MARGIN.top + CAP_RIBBON_HEIGHT + 14;
+    var xTickStep = Math.max(1, Math.floor(maxFrame / 8));
+    var xTicks = [];
+    for (var f = 1; f <= maxFrame; f += xTickStep) xTicks.push(f);
+    if (xTicks[xTicks.length - 1] !== maxFrame) xTicks.push(maxFrame);
+    for (var xi = 0; xi < xTicks.length; xi++) {
+      var xv = xTicks[xi];
+      children.push(
+        h(
+          "text",
+          {
+            key: "xl-" + xi,
+            x: xScale(xv),
+            y: capTicksY,
+            fill: "#8F8D8B",
+            fontSize: 11,
+            textAnchor: "middle",
+            fontFamily: "monospace",
+          },
+          useFrameNumber ? xv : formatTimestampTick(xv, fps),
+        ),
+      );
+    }
+
+    // Text strip background
+    var stripY = CAP_MARGIN.top + CAP_RIBBON_HEIGHT + 18;
+    children.push(
+      h("rect", {
+        key: "stripbg",
+        x: CAP_MARGIN.left,
+        y: stripY,
+        width: plotWidth,
+        height: CAP_TEXT_STRIP_HEIGHT - 4,
+        fill: "#1E1F20",
+        rx: 3,
+      }),
+    );
+
+    // Current-frame caption text (foreignObject for native ellipsis on overflow)
+    children.push(
+      h(
+        "foreignObject",
+        {
+          key: "stripfo",
+          x: CAP_MARGIN.left + 8,
+          y: stripY + 4,
+          width: Math.max(plotWidth - 16, 0),
+          height: CAP_TEXT_STRIP_HEIGHT - 12,
+        },
+        h(
+          "div",
+          {
+            xmlns: "http://www.w3.org/1999/xhtml",
+            style: {
+              color: currentText ? "#EAEAEA" : "#8F8D8B",
+              fontSize: "13px",
+              fontFamily: "system-ui, sans-serif",
+              fontStyle: currentText ? "normal" : "italic",
+              lineHeight: "1.3",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              width: "100%",
+            },
+            title: currentText || "",
+          },
+          currentText || "(no caption at this frame)",
+        ),
+      ),
+    );
+
+    // Frame indicator (over ribbon)
+    if (currentFrame >= 1 && currentFrame <= maxFrame) {
+      var cx = xScale(currentFrame);
+      children.push(
+        h("line", {
+          key: "frameline",
+          x1: cx,
+          y1: CAP_MARGIN.top - 4,
+          x2: cx,
+          y2: CAP_MARGIN.top + CAP_RIBBON_HEIGHT + 4,
+          stroke: "#86B5F6",
+          strokeWidth: 2,
+        }),
+      );
+    }
+
+    // Click overlay covering ribbon area only (so text strip stays selectable)
+    children.push(
+      h("rect", {
+        key: "click",
+        x: CAP_MARGIN.left,
+        y: CAP_MARGIN.top - 4,
+        width: plotWidth,
+        height: CAP_RIBBON_HEIGHT + 8,
+        fill: "transparent",
+        style: { cursor: "pointer" },
+        onMouseDown: handleMouseDown,
+      }),
+    );
+
+    var svgEl = h(
+      "svg",
+      {
+        ref: svgRef,
+        width: width,
+        height: CAP_TOTAL_HEIGHT,
+        style: { display: "block" },
+      },
+      children,
+    );
+
+    // Hover tooltip (positioned absolutely above the ribbon)
+    var tooltip = null;
+    if (hover) {
+      tooltip = h(
+        Box,
+        {
+          sx: {
+            position: "absolute",
+            top: -2,
+            left: "50%",
+            transform: "translateX(-50%)",
+            bgcolor: "rgba(20, 20, 20, 0.95)",
+            color: "#EAEAEA",
+            border: "1px solid #404040",
+            borderRadius: "4px",
+            padding: "6px 10px",
+            fontSize: "12px",
+            maxWidth: "80%",
+            zIndex: 10,
+            pointerEvents: "none",
+            whiteSpace: "normal",
+            wordBreak: "break-word",
+          },
+        },
+        hover,
+      );
+    }
+
+    return h(
+      Box,
+      { sx: { position: "relative" } },
+      svgEl,
+      tooltip,
+    );
+  }
+
+  // ==========================================================
   // Component: ChartCard
   // Wraps a single chart with header (label + action buttons)
   // and handles loading/error/data states.
@@ -1358,7 +1840,16 @@
     var useFrameNumber = props.useFrameNumber !== false;
     var fps = props.fps || 30;
 
-    var placeholderHeight = chartType === "labels" ? 200 : CHART_HEIGHT;
+    var placeholderHeight;
+    if (chartType === "labels") {
+      placeholderHeight = 200;
+    } else if (chartType === "event") {
+      placeholderHeight = EVT_TOTAL_HEIGHT;
+    } else if (chartType === "caption") {
+      placeholderHeight = CAP_TOTAL_HEIGHT;
+    } else {
+      placeholderHeight = CHART_HEIGHT;
+    }
 
     var body;
     if (loading) {
@@ -1408,6 +1899,29 @@
         labels: data.track_names,
         timeline: data.tracks,
         colorKeyMap: data.track_labels,
+        currentFrame: currentFrame,
+        totalFrames: totalFrames,
+        onFrameSeek: onFrameSeek,
+        width: width,
+        useFrameNumber: useFrameNumber,
+        fps: fps,
+      });
+    } else if (chartType === "event" && data && data.segments) {
+      body = h(EventChart, {
+        frames: data.frames,
+        segments: data.segments,
+        currentFrame: currentFrame,
+        totalFrames: totalFrames,
+        onFrameSeek: onFrameSeek,
+        width: width,
+        useFrameNumber: useFrameNumber,
+        fps: fps,
+      });
+    } else if (chartType === "caption" && data && data.segments) {
+      body = h(CaptionRibbon, {
+        frames: data.frames,
+        values: data.values,
+        segments: data.segments,
         currentFrame: currentFrame,
         totalFrames: totalFrames,
         onFrameSeek: onFrameSeek,
@@ -1868,6 +2382,17 @@
           };
           stashOk = true;
           console.log(LOG_PREFIX, "Loaded label timeline for", key);
+        } else if (payload.segments) {
+          // Event (bool) or caption (string) segment data
+          dataStoreRef.current[key] = {
+            frames: payload.frames,
+            values: payload.values,
+            segments: payload.segments,
+            fps: payload.fps,
+            total_frames: payload.total_frames,
+          };
+          stashOk = true;
+          console.log(LOG_PREFIX, "Loaded", payload.segments.length, "segments for", key);
         } else if (payload.frames && payload.values) {
           // Count data
           dataStoreRef.current[key] = {
@@ -2141,7 +2666,15 @@
     var addOptions = [];
     for (var oi = 0; oi < fields.length; oi++) {
       var af = fields[oi];
-      if (af.has_labels) {
+      if (af.type === "bool") {
+        if (!usedKeys[chartKey(af.path, "event")]) {
+          addOptions.push({ value: af.path + ":event", label: af.path + " (event)" });
+        }
+      } else if (af.type === "string") {
+        if (!usedKeys[chartKey(af.path, "caption")]) {
+          addOptions.push({ value: af.path + ":caption", label: af.path + " (caption)" });
+        }
+      } else if (af.has_labels) {
         if (!usedKeys[chartKey(af.path, "labels")]) {
           addOptions.push({ value: af.path + ":labels", label: af.path + " (labels)" });
         }
@@ -2262,6 +2795,10 @@
                     label = chart.field + " (labels)";
                   } else if (chart.type === "tracks") {
                     label = chart.field + " (tracks)";
+                  } else if (chart.type === "event") {
+                    label = chart.field + " (event)";
+                  } else if (chart.type === "caption") {
+                    label = chart.field + " (caption)";
                   } else {
                     label = fields[li].label;
                   }
