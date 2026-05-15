@@ -1,5 +1,5 @@
 // ============================================================
-// TemporalDataExplorer — JS Panel for temporal-detection
+// TemporalDataExplorer — JS Panel for @mgustineli/temporal-detection
 //
 // SVG line chart of per-frame temporal data with bidirectional
 // video sync:
@@ -310,7 +310,7 @@
   // ==========================================================
   // localStorage helpers for chart persistence
   // ==========================================================
-  var LS_PREFIX = "temporal-detection:fields:";
+  var LS_PREFIX = "@mgustineli/temporal-detection:fields:";
 
   function saveChartFields(datasetName, charts) {
     if (!datasetName) return;
@@ -2148,10 +2148,10 @@
     var dataExecutor = null;
     if (foo && typeof foo.useOperatorExecutor === "function") {
       fieldsExecutor = foo.useOperatorExecutor(
-        "temporal-detection/get_temporal_fields",
+        "@mgustineli/temporal-detection/get_temporal_fields",
       );
       dataExecutor = foo.useOperatorExecutor(
-        "temporal-detection/get_frame_values",
+        "@mgustineli/temporal-detection/get_frame_values",
       );
     } else {
       console.error(

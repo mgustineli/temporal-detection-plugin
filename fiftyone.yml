@@ -1,4 +1,4 @@
-name: temporal-detection
+name: "@mgustineli/temporal-detection"
 type: plugin
 version: 1.0.0
 description: Temporal data explorer with label timeline heatmap and line charts, bidirectional video sync
