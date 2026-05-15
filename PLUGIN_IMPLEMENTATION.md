@@ -2,12 +2,21 @@
 
 ## Overview
 
-A hybrid Python + JS FiftyOne plugin that renders an interactive SVG line chart of per-frame temporal data in the modal view, with **bidirectional sync**. Supports two data models:
+A hybrid Python + JS FiftyOne plugin that renders interactive per-frame temporal charts in the modal view, with **bidirectional sync**. Supports two data models:
 
 1. **Native video datasets** — frame-level data under `frames[]`
 2. **Dynamically grouped image datasets** — e.g., NuScenes scenes played back as video via ImaVid (fields are top-level, not under `frames[]`)
 
 Dynamic groups support all three navigation modes: **pagination**, **carousel**, and **video** (ImaVid).
+
+Five chart types render different field types:
+
+| Field type | Chart | Mode |
+|---|---|---|
+| `FloatField` / `IntField` | SVG line chart with area fill (floats auto-formatted to 2 dp) | `count` |
+| `ListField` (e.g., `Detections`) | Count line chart, label timeline heatmap, or instance track heatmap | `count` / `labels` / `tracks` |
+| `BooleanField` | Event chart — horizontal track shaded where True | `event` |
+| `StringField` | Caption ribbon — colored segment per unique caption span + current-frame text strip + hover tooltip | `caption` |
 
 ## Architecture
 
@@ -50,7 +59,7 @@ plugin/
 
 ### 1. Python Operators (`__init__.py`)
 
-**`GetTemporalFields`** — discovers plottable fields (`FloatField`, `IntField`, `ListField`). Returns `dataset_name` for per-dataset localStorage persistence:
+**`GetTemporalFields`** — discovers plottable fields (`FloatField`, `IntField`, `ListField`, `BooleanField`, `StringField`). Returns `dataset_name` for per-dataset localStorage persistence:
 
 ```python
 # Branches on ctx.view._is_dynamic_groups
@@ -76,7 +85,9 @@ else:
     frame_numbers, values = view.values(["frames[].frame_number", expr])
 ```
 
-For `ListField` types (like detections), plots `F(expr).length()` (count). For scalar fields, plots the value directly. Returns `sample_ids` for dynamic groups to enable carousel mode bidirectional sync.
+For `ListField` types (like detections), plots `F(expr).length()` (count). For scalar fields (float/int), plots the value directly. Returns `sample_ids` for dynamic groups to enable carousel mode bidirectional sync.
+
+For `BooleanField` and `StringField`, dispatches to `_get_event_data` / `_get_caption_data` which return per-frame values plus pre-computed segments via a shared `_compute_segments(values, frame_numbers, drop_falsy)` helper that collapses adjacent equal values into `[{start, end, value}]` spans. Booleans drop `False`/`None`; captions drop empty/`None`. The JS chart components render directly from these segments rather than the raw values.
 
 ### 2. JS Panel — `DetectionCountPlotInteractive` (`index.umd.js`)
 
@@ -99,8 +110,11 @@ DetectionCountPlotPanel (main component)
 ├── Sequential load queue    — loadQueueRef, loadingFieldRef, processQueue()
 ├── "Add chart" toolbar      — <select> showing fields not yet added
 ├── Scrollable container     — maps charts[] → ChartCard components
-│   └── ChartCard            — header (label + ▲/▼/✕) + SVGChart/loading/error
-├── SVGChart                 — pure SVG rendering + click/drag-to-seek
+│   └── ChartCard            — header (label + ▲/▼/✕) + dispatches to the right chart component
+├── SVGChart                 — line + area fill (float/int/count); auto-detects int vs float ticks
+├── LabelTimelineChart       — swim-lane heatmap (labels / tracks)
+├── EventChart               — boolean field; track shaded where True
+├── CaptionRibbon            — string field; ribbon segments + current-text strip + hover tooltip
 ├── localStorage persistence — saves/restores chart selections per dataset
 ├── Carousel sync            — sampleId ↔ frame mapping, modalSelector navigation
 └── Status Bar               — frame counter, FPS, chart count, play/pause
@@ -248,7 +262,11 @@ The `modalLooker` is the actual Looker instance, shared between the video player
 2. **Discovers fields** via `useOperatorExecutor("video-detection-chart/get_temporal_fields")` — response includes `dataset_name`
 3. **Initializes charts**: restores from localStorage (keyed by `dataset_name`) → filters to available fields → falls back to default (prefers `detections.detections`)
 4. **Sequential load queue**: fields are queued and loaded one at a time through the single `dataExecutor` — `processQueue()` pops next field, calls `execute()`, stashes result in `dataStoreRef`, advances
-5. **Python operator** returns `{frames, values, fps, total_frames, field, sample_ids}` — branching on `_is_dynamic_groups`
+5. **Python operator** returns one of several shapes, branching on `mode`:
+   - `count` / scalar — `{frames, values, fps, total_frames, field, sample_ids}`
+   - `labels` — `{frames, labels, timeline, ...}` (per-label count arrays)
+   - `tracks` — `{frames, track_names, tracks, track_labels, ...}` (binary instance presence)
+   - `event` / `caption` — `{frames, values, segments, ...}` where `segments` is `[{start, end, value}]`
 6. **Builds sample ID mappings** (for carousel mode) from first chart's `sample_ids` in the response
 7. **ChartCard components render** — each with its own loading/error/data state, SVG chart, and header with move/remove buttons
 8. **localStorage saves** on every chart change (add/remove/reorder) — persisted per dataset
@@ -263,10 +281,12 @@ The panel supports viewing multiple temporal fields simultaneously. Users can ad
 ### State Model
 
 ```js
-var charts = [{id: 1, field: "detections.detections"}, ...];  // ordering + field binding
-var chartStatus = {"detections.detections": {loading: false, error: null}, ...};  // per-field status
-var dataStoreRef = useRef({});  // cache: field → {frames, counts, fps, total_frames}
+var charts = [{id: 1, field: "detections.detections", type: "labels"}, ...];  // ordering + (field, type) binding
+var chartStatus = {"detections.detections:labels": {loading: false, error: null}, ...};  // per-chart status, composite key
+var dataStoreRef = useRef({});  // cache: field:type → {frames, ...} (shape depends on mode)
 ```
+
+The cache value shape is mode-dependent: line charts store `counts`, label heatmaps store `timeline`, instance tracks store `tracks`/`track_names`, and event/caption charts store `segments`.
 
 - `charts` (useState) — drives rendering order and localStorage saves
 - `chartStatus` (useState) — per-field loading/error state, triggers re-renders
