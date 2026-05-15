@@ -40,8 +40,14 @@ def _is_dynamic_groups(ctx):
 
 
 def _get_fields(ctx):
-    """Discover plottable frame-level fields (Float, Int, List)."""
-    ftypes = (fo.FloatField, fo.IntField, fo.ListField)
+    """Discover plottable frame-level fields (Float, Int, List, Bool, String)."""
+    ftypes = (
+        fo.FloatField,
+        fo.IntField,
+        fo.ListField,
+        fo.BooleanField,
+        fo.StringField,
+    )
 
     if _is_dynamic_groups(ctx):
         schema = ctx.view.get_field_schema(flat=True, ftype=ftypes)
@@ -90,6 +96,20 @@ def _get_fields(ctx):
         elif isinstance(field, fo.IntField):
             fields.append({
                 "path": path, "type": "int", "label": path,
+                "has_labels": False, "has_tracks": False,
+            })
+        elif isinstance(field, fo.BooleanField):
+            fields.append({
+                "path": path, "type": "bool", "label": path,
+                "has_labels": False, "has_tracks": False,
+            })
+        elif isinstance(field, fo.StringField):
+            # Skip dataset-internal/id-like string fields that are not
+            # meaningful as per-frame captions
+            if path in ("id", "filepath", "tags", "_id", "_dataset_id"):
+                continue
+            fields.append({
+                "path": path, "type": "string", "label": path,
                 "has_labels": False, "has_tracks": False,
             })
 
@@ -291,6 +311,101 @@ def _get_instance_tracks(ctx, sample_id, field_path):
     }
 
 
+def _compute_segments(values, frame_numbers, drop_falsy=False):
+    """Collapse adjacent equal values into [{start, end, value}] spans.
+
+    None is always treated as "no segment". When drop_falsy is True, falsy
+    values (False, "", 0) are also skipped — used by event charts to render
+    only True spans.
+    """
+    segments = []
+    n = len(values)
+    if n == 0:
+        return segments
+
+    i = 0
+    while i < n:
+        v = values[i]
+        if v is None or (drop_falsy and not v):
+            i += 1
+            continue
+        j = i + 1
+        while j < n and values[j] == v:
+            j += 1
+        segments.append({
+            "start": frame_numbers[i],
+            "end": frame_numbers[j - 1],
+            "value": v,
+        })
+        i = j
+
+    return segments
+
+
+def _get_scalar_field_values(ctx, sample_id, field_path):
+    """Fetch raw per-frame scalar values for a non-list field.
+
+    Returns (frame_numbers, values, fps, total_frames, sample_ids). Shared by
+    the event (bool) and caption (string) fetchers.
+    """
+    if _is_dynamic_groups(ctx):
+        group_key = _get_dynamic_group_key(ctx, sample_id)
+        group = ctx.view.get_dynamic_group(group_key)
+        values = group.values(field_path)
+        frame_numbers = list(range(1, len(values) + 1))
+        fps = 30
+        total_frames = len(frame_numbers)
+        sample_ids = [str(s) for s in group.values("id")]
+    else:
+        sample = ctx.dataset[sample_id]
+        fps = sample.metadata.frame_rate if sample.metadata else 30
+        total_frames = sample.metadata.total_frame_count if sample.metadata else 0
+        view = fov.make_optimized_select_view(ctx.view, [sample_id])
+        frame_numbers, values = view.values(
+            ["frames[].frame_number", "frames[]." + field_path]
+        )
+        sample_ids = None
+
+    return frame_numbers, values, fps, total_frames, sample_ids
+
+
+def _get_event_data(ctx, sample_id, field_path):
+    """Fetch per-frame boolean values + computed True-only segments."""
+    frame_numbers, values, fps, total_frames, sample_ids = _get_scalar_field_values(
+        ctx, sample_id, field_path
+    )
+    segments = _compute_segments(values, frame_numbers, drop_falsy=True)
+    # Coerce to 0/1/None for JS (booleans serialize fine but be explicit)
+    coerced = [None if v is None else (1 if v else 0) for v in values]
+    return {
+        "frames": frame_numbers,
+        "values": coerced,
+        "segments": segments,
+        "fps": fps,
+        "total_frames": total_frames,
+        "field": field_path,
+        "sample_ids": sample_ids,
+    }
+
+
+def _get_caption_data(ctx, sample_id, field_path):
+    """Fetch per-frame string values + computed segments (one per unique run)."""
+    frame_numbers, values, fps, total_frames, sample_ids = _get_scalar_field_values(
+        ctx, sample_id, field_path
+    )
+    # Keep empty strings as "no caption" — drop them from segments
+    segments = _compute_segments(values, frame_numbers, drop_falsy=True)
+    return {
+        "frames": frame_numbers,
+        "values": values,
+        "segments": segments,
+        "fps": fps,
+        "total_frames": total_frames,
+        "field": field_path,
+        "sample_ids": sample_ids,
+    }
+
+
 class GetTemporalFields(foo.Operator):
     """Discovers plottable frame-level fields for the current dataset."""
 
@@ -354,6 +469,20 @@ class GetFrameValues(foo.Operator):
                 print(
                     f"{LOG_PREFIX} Loaded instance tracks for '{field_path}'"
                     f" ({len(result['track_names'])} tracks,"
+                    f" {len(result['frames'])} frames)"
+                )
+            elif mode == "event":
+                result = _get_event_data(ctx, sample_id, field_path)
+                print(
+                    f"{LOG_PREFIX} Loaded event data for '{field_path}'"
+                    f" ({len(result['segments'])} True-segments,"
+                    f" {len(result['frames'])} frames)"
+                )
+            elif mode == "caption":
+                result = _get_caption_data(ctx, sample_id, field_path)
+                print(
+                    f"{LOG_PREFIX} Loaded caption data for '{field_path}'"
+                    f" ({len(result['segments'])} segments,"
                     f" {len(result['frames'])} frames)"
                 )
             else:

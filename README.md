@@ -1,6 +1,6 @@
 # Temporal Detection Plugin for FiftyOne
 
-A [FiftyOne](https://github.com/voxel51/fiftyone) plugin that renders interactive temporal charts in the modal view, with **bidirectional sync**. Includes a **label timeline heatmap** (swim lane chart showing per-label detections) and **line charts** for any frame-level field.
+A [FiftyOne](https://github.com/voxel51/fiftyone) plugin that renders interactive temporal charts in the modal view, with **bidirectional sync**. Includes a **label timeline heatmap** (swim lane chart showing per-label detections), **line charts** for scalar (`FloatField` / `IntField`) fields, **event charts** for boolean indicators (True/False per frame), and **caption ribbons** for per-frame text (commentary, VLA instructions, scene descriptions).
 
 Supports **native video datasets** and **dynamically grouped image datasets** (e.g., NuScenes scenes played back as video via ImaVid) across all navigation modes: pagination, carousel, and video.
 
@@ -21,8 +21,8 @@ All operators are unlisted (called internally by the JS panel):
 
 | Operator | Description |
 |----------|-------------|
-| `get_temporal_fields` | Discovers plottable frame-level fields (`FloatField`, `IntField`, `ListField`) with `has_labels` flag |
-| `get_frame_values` | Returns per-frame values or label timeline data (`mode=count` or `mode=labels`) |
+| `get_temporal_fields` | Discovers plottable frame-level fields (`FloatField`, `IntField`, `ListField`, `BooleanField`, `StringField`) with `has_labels`/`has_tracks` flags |
+| `get_frame_values` | Returns per-frame values or pre-computed segments (`mode=count` / `labels` / `tracks` / `event` / `caption`) |
 | `get_detection_counts` | Legacy wrapper — delegates to `get_frame_values` with `detections.detections` |
 
 ## Panel
@@ -33,7 +33,9 @@ Opens in the modal view alongside the video player. Features:
 
 - **Multi-chart support** — add, remove, and reorder multiple charts with per-dataset localStorage persistence
 - **Label timeline heatmap** — swim lane chart with one row per label, color intensity encoding per-frame count, top-N filtering with expander
-- **Line + area fill chart** of per-frame count/float/int values
+- **Line + area fill chart** of per-frame count/float/int values (floats auto-formatted to 2 decimal places)
+- **Event chart** — horizontal track shaded where a `BooleanField` is True (e.g. `Turning`, `is_key_frame`)
+- **Caption ribbon** — colored segment per unique caption span with a text strip showing the current caption and a hover tooltip for the full segment text
 - **Blue frame indicator** (vertical line + dot + value label) tracking the current frame
 - **Click/drag to seek** — click anywhere on the chart or drag to scrub through frames
 - **Hover tooltip** — shows per-label counts at the hovered frame (portal-rendered, overlays other charts)

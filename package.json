@@ -1,5 +1,5 @@
 {
-  "name": "temporal-detection",
+  "name": "@mgustineli/temporal-detection",
   "version": "1.0.0",
   "fiftyone": {
     "script": "index.umd.js"
